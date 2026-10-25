@@ -26,4 +26,4 @@ Everything (pixel art, monsters, sound) is generated in code inside the single `
 
 ## Hosting
 
-GitHub Pages serves this repository from the `main` branch, folder `/ (root)`. Add `?record=1` to the URL for slightly slower monster tells, handy for recording clips.
+GitHub Pages serves this repository from the `main` branch, folder `/ (root)`. The link-preview card shown when the link is shared (`preview.png`, 1200×630) is made from the game itself by `scripts/make-preview.mjs`. Add `?record=1` to the URL for slightly slower monster tells, handy for recording clips.
