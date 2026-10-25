@@ -1,0 +1,2410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0612">
+<meta name="color-scheme" content="dark">
+<meta name="format-detection" content="telephone=no">
+<meta name="description" content="Minesweeper with a twist: a Mine Monster crawls under the tiles, and the numbers change as it moves.">
+<title>Minesweeper: Something Moves</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect x='7' y='0' width='2' height='3' fill='%235fa83a'/%3E%3Crect x='2' y='3' width='12' height='12' fill='%23ff8a1f'/%3E%3Crect x='0' y='5' width='16' height='8' fill='%23ff8a1f'/%3E%3Crect x='3' y='6' width='3' height='2' fill='%23ffe066'/%3E%3Crect x='10' y='6' width='3' height='2' fill='%23ffe066'/%3E%3Crect x='4' y='10' width='8' height='2' fill='%23ffe066'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg0:#0b0612; --bg1:#150a24; --bg2:#24113d;
+  --pur:#3b2263; --pur-hi:#6b46a6; --pur-lo:#1b0c30;
+  --orange:#ff8a1f; --orange-hi:#ffc266; --orange-lo:#b85300;
+  --green:#c6ff4a; --red:#ff3344; --text:#f1e8ff; --muted:#a58fc8;
+  --tremble:380ms;
+  --font:ui-monospace,"SFMono-Regular","Menlo","Consolas","Liberation Mono",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html,body{height:100%;overflow:hidden;background:var(--bg0);color:var(--text);font-family:var(--font);overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{position:fixed;top:0;right:0;bottom:0;left:0}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus{outline:none}
+button:focus-visible{outline:2px dashed var(--orange-hi);outline-offset:3px}
+canvas{display:block}
+#bg,#logo1,#logo2,#peek,#endTitle{image-rendering:pixelated}
+
+#app{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;flex-direction:column;overflow:hidden;overflow:clip;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#bg{position:absolute;top:0;right:0;bottom:0;left:0;width:100%;height:100%;z-index:0}
+#fogWrap{position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;pointer-events:none;overflow:hidden;overflow:clip}
+#fog{position:absolute;top:-20%;right:-20%;bottom:-20%;left:-20%;opacity:.55;
+  background:radial-gradient(40% 22% at 30% 72%,rgba(130,80,200,.20),transparent 70%),radial-gradient(34% 18% at 75% 38%,rgba(255,138,31,.07),transparent 70%);
+  animation:fog 26s ease-in-out infinite alternate}
+@keyframes fog{from{transform:translate3d(-6%,0,0)}to{transform:translate3d(6%,-3%,0)}}
+#hud,#boardWrap,#controls{position:relative;z-index:1}
+#app[data-mode="title"] #hud,#app[data-mode="title"] #boardWrap,#app[data-mode="title"] #controls{visibility:hidden}
+
+/* ---------- HUD ---------- */
+#hud{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:5px;padding:8px 6px 6px;width:100%;max-width:580px;align-self:center}
+.box{height:40px;display:flex;align-items:center;justify-content:center;gap:5px;padding:0 7px;background:#170c28;
+  box-shadow:inset 0 0 0 2px #3b2263,inset 0 -4px 0 #0e0718}
+.num{font-weight:800;font-size:19px;line-height:1;color:var(--orange);text-shadow:0 0 6px rgba(255,138,31,.55);font-variant-numeric:tabular-nums;letter-spacing:1px}
+.icon{display:inline-block;width:18px;height:18px;flex:0 0 auto;background:center/contain no-repeat;image-rendering:pixelated}
+.ib{width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;background:#24113d;box-shadow:inset 0 0 0 2px #4a2a78,inset 0 -4px 0 #140a22}
+.ib:active{transform:translateY(2px);box-shadow:inset 0 0 0 2px #4a2a78}
+#creep{flex:0 1 104px;flex-direction:column;gap:5px;min-width:62px}
+#creep .dots{display:flex;gap:7px}
+#creep i{display:block;width:10px;height:10px;background:#2c1d42;box-shadow:inset 0 0 0 2px #3d2a58}
+#creep i.on{background:var(--green);box-shadow:0 0 8px rgba(198,255,74,.8)}
+#creep i.on.warn{background:var(--red);box-shadow:0 0 10px rgba(255,51,68,.95);animation:warn .36s steps(1) infinite}
+@keyframes warn{50%{opacity:.3}}
+#creep .lbl{font-size:9px;line-height:1;letter-spacing:2px;color:var(--muted);font-weight:800}
+#creep.warn .lbl{color:var(--red)}
+#creep.idle i{background:#4b3d60;box-shadow:inset 0 0 0 2px #6b5a85}
+#creep.idle .lbl{color:var(--orange)}
+@media (min-width:700px) and (min-height:700px){
+  #hud{justify-content:center;gap:12px}
+  .ib{width:48px;height:48px}
+  .box{height:48px;padding:0 10px}
+  .num{font-size:23px}
+  .icon{width:22px;height:22px}
+}
+@media (max-width:374px){
+  #hud{gap:3px;padding:6px 4px}
+  .ib{width:36px;height:38px}
+  .box{padding:0 5px;gap:4px;height:38px}
+  .num{font-size:17px;letter-spacing:0}
+  #creep{min-width:50px}
+  #creep .dots{gap:5px}
+}
+
+/* ---------- Board ---------- */
+#boardWrap{flex:1 1 auto;min-height:0;overflow:hidden;overflow:clip}
+#shake{position:absolute;top:0;right:0;bottom:0;left:0}
+#shake.tremble{animation:tremble var(--tremble) linear}
+#shake.kick{animation:kick .45s linear}
+@keyframes tremble{0%,100%{transform:none}12%{transform:translate(-2px,1px) rotate(-.4deg)}25%{transform:translate(2px,-1px) rotate(.4deg)}37%{transform:translate(-2px,-1px)}50%{transform:translate(2px,1px) rotate(-.3deg)}62%{transform:translate(-1px,1px) rotate(.3deg)}75%{transform:translate(1px,-1px)}87%{transform:translate(-1px,0)}}
+@keyframes kick{0%,100%{transform:none}10%{transform:translate(-7px,4px)}20%{transform:translate(6px,-5px)}30%{transform:translate(-5px,-3px)}40%{transform:translate(4px,4px)}55%{transform:translate(-3px,2px)}70%{transform:translate(2px,-2px)}85%{transform:translate(-1px,1px)}}
+#board{position:absolute;left:0;top:0;image-rendering:pixelated;
+  box-shadow:0 0 0 3px #0b0612,0 0 0 6px #3b2263,0 0 34px rgba(120,60,200,.35)}
+.edge{position:absolute;pointer-events:none;opacity:0;transition:opacity .2s;z-index:2}
+.edge.on{opacity:1}
+.edge.l{left:0;top:0;bottom:0;width:10px;background:linear-gradient(90deg,rgba(11,6,18,.95),transparent)}
+.edge.r{right:0;top:0;bottom:0;width:10px;background:linear-gradient(270deg,rgba(11,6,18,.95),transparent)}
+.edge.t{left:0;right:0;top:0;height:10px;background:linear-gradient(180deg,rgba(11,6,18,.95),transparent)}
+.edge.b{left:0;right:0;bottom:0;height:10px;background:linear-gradient(0deg,rgba(11,6,18,.95),transparent)}
+
+/* ---------- Controls ---------- */
+#controls{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:7px;padding:6px 8px 12px}
+#hint{font-size:11px;line-height:1.35;letter-spacing:1.5px;color:var(--muted);font-weight:800;text-align:center;white-space:pre-line;min-height:2.7em}
+#hint.alert{color:var(--orange)}
+.pbtn{font-weight:800;font-size:16px;letter-spacing:2px;color:#1a0d2b;background:var(--orange);padding:12px 18px;
+  box-shadow:inset -3px -4px 0 var(--orange-lo),inset 3px 3px 0 var(--orange-hi),0 0 0 3px #0b0612}
+.pbtn:active{transform:translateY(2px);box-shadow:inset 3px 3px 0 var(--orange-lo),0 0 0 3px #0b0612}
+.pbtn.ghost{background:#2a1446;color:var(--text);box-shadow:inset -3px -4px 0 #150a26,inset 3px 3px 0 #4f2d80,0 0 0 3px #0b0612}
+.pbtn.ghost:active{box-shadow:inset 3px 3px 0 #150a26,0 0 0 3px #0b0612}
+.pbtn.small{font-size:12px;padding:8px 12px}
+.ctrlRow{display:flex;gap:12px;width:100%;max-width:440px;justify-content:center}
+.ctrlRow .pbtn{flex:1 1 0;min-width:0;height:52px;display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 10px;font-size:15px;letter-spacing:1.5px;white-space:nowrap}
+#flagBtn[aria-pressed="true"]{background:var(--orange);color:#1a0d2b;box-shadow:inset -3px -4px 0 var(--orange-lo),inset 3px 3px 0 var(--orange-hi),0 0 0 3px #0b0612,0 0 22px rgba(255,138,31,.55)}
+#tntBtn[aria-pressed="true"]{background:var(--red);color:#fff;box-shadow:inset -3px -4px 0 #9c1020,inset 3px 3px 0 #ff7a86,0 0 0 3px #0b0612,0 0 24px rgba(255,51,68,.6);animation:fuse .5s steps(1) infinite}
+@keyframes fuse{50%{box-shadow:inset -3px -4px 0 #9c1020,inset 3px 3px 0 #ff7a86,0 0 0 3px #0b0612,0 0 8px rgba(255,51,68,.3)}}
+#tntBtn:disabled{opacity:.4;cursor:default;transform:none}
+
+/* ---------- Screens ---------- */
+.screen{position:absolute;top:0;right:0;bottom:0;left:0;z-index:20;display:none}
+.screen.show{display:flex}
+#title{flex-direction:column;align-items:center;justify-content:center;gap:clamp(10px,2.4vh,22px);text-align:center;
+  padding:calc(14px + env(safe-area-inset-top)) 16px calc(14px + env(safe-area-inset-bottom));
+  background:radial-gradient(120% 60% at 50% 100%,rgba(255,138,31,.10),transparent 60%);cursor:pointer}
+#logo1{filter:drop-shadow(0 0 14px rgba(255,138,31,.45))}
+#logo2{margin-top:-4px;animation:creep 5s steps(1) infinite}
+@keyframes creep{0%,88%,100%{transform:none}90%{transform:translate(2px,0) skewX(-6deg)}92%{transform:translate(-2px,1px) skewX(5deg)}94%{transform:none}}
+.rules{font-size:15px;line-height:1.45;max-width:300px;color:var(--text);font-weight:700}
+.rules em{font-style:normal;color:var(--green);text-shadow:0 0 8px rgba(198,255,74,.5)}
+.diff{display:flex;justify-content:center;gap:10px;padding:8px;width:100%;max-width:460px}
+.dbtn{flex:1 1 0;min-width:0;max-width:136px;padding:10px 4px 11px;background:#1c0f30;color:var(--muted);box-shadow:inset 0 0 0 3px #3b2263,inset 0 -5px 0 #10081c}
+.dbtn b{display:block;font-size:clamp(14px,4.6vw,19px);letter-spacing:2px}
+.dbtn small{display:block;font-size:10px;letter-spacing:1px;margin-top:4px;font-weight:700}
+.dbtn[aria-checked="true"]{color:#1a0d2b;background:var(--orange);box-shadow:inset 0 0 0 3px var(--orange-hi),inset 0 -5px 0 var(--orange-lo),0 0 18px rgba(255,138,31,.45)}
+.tap{font-size:22px;font-weight:800;letter-spacing:4px;color:var(--orange);text-shadow:0 0 10px rgba(255,138,31,.7);padding:10px 18px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:.25}}
+.howto{font-size:10px;line-height:1.6;letter-spacing:1.5px;color:var(--muted);font-weight:800;max-width:340px;text-wrap:balance}
+.best{font-size:11px;letter-spacing:2px;color:var(--orange-hi);font-weight:800;min-height:1em}
+#titleMute{position:absolute;top:calc(10px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right))}
+
+#end{flex-direction:column;align-items:center;justify-content:flex-end;gap:12px;
+  padding:12px 10px calc(14px + env(safe-area-inset-bottom));
+  background:linear-gradient(to bottom,transparent 22%,rgba(8,4,14,.9) 62%)}
+#end .panel{width:min(100%,400px);max-height:100%;overflow-y:auto;background:#170c28;padding:16px 14px 14px;text-align:center;
+  box-shadow:0 0 0 3px #0b0612,0 0 0 6px var(--orange),0 10px 40px rgba(0,0,0,.6);animation:rise .4s cubic-bezier(.2,1.3,.4,1)}
+#end.lose .panel{box-shadow:0 0 0 3px #0b0612,0 0 0 6px var(--red),0 10px 40px rgba(0,0,0,.6)}
+#end{pointer-events:none}
+#end .panel,#end #viewBtn{pointer-events:auto}
+#app[data-mode="end"] #controls{visibility:hidden}
+#end.hidepanel{background:none}
+#end.hidepanel .panel{display:none}
+@keyframes rise{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+#endTitle{margin:2px auto 8px}
+#endSub{font-size:13px;line-height:1.4;color:var(--muted);font-weight:700}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:12px 0 10px}
+.stats div{background:#0f0819;padding:7px 6px;box-shadow:inset 0 0 0 2px #2c1a48}
+.stats .wide{grid-column:1/-1}
+.stats span{display:block;font-size:10px;letter-spacing:2px;color:var(--muted);font-weight:800}
+.stats b{display:block;font-size:15px;color:var(--text);margin-top:3px;letter-spacing:1px}
+.stats .hot b{color:var(--orange);text-shadow:0 0 8px rgba(255,138,31,.5)}
+.stats .good b{color:var(--green)}
+#endQuip{font-size:12px;line-height:1.4;color:var(--text);margin-bottom:12px;font-weight:700}
+.row{display:flex;gap:10px;justify-content:center}
+.row .pbtn{flex:1 1 0;max-width:170px;white-space:nowrap;font-size:15px;padding:12px 8px;letter-spacing:1.5px}
+
+#fx{position:fixed;top:0;right:0;bottom:0;left:0;width:100%;height:100%;z-index:100;pointer-events:none;display:none;image-rendering:pixelated}
+#app.bigshake{animation:bigshake .08s linear 10}
+@keyframes bigshake{0%,100%{transform:none}25%{transform:translate(-8px,5px)}50%{transform:translate(7px,-6px)}75%{transform:translate(-5px,-4px)}}
+
+@media (orientation:landscape) and (max-height:540px){
+  #app{flex-direction:row}
+  #hud{flex-direction:column;justify-content:center;padding:8px 4px 8px 8px;width:auto;max-width:none;align-self:stretch}
+  #hud .box{width:86px}
+  #creep{flex:0 0 auto;height:46px}
+  #controls{width:150px;justify-content:flex-end;padding:8px 8px 14px 4px}
+  #stScoreBox,#stBestBox{grid-column:span 2}
+  .ctrlRow{flex-direction:column;gap:10px}
+  .ctrlRow .pbtn{flex:0 0 auto;width:136px;height:auto;flex-direction:column;padding:10px 6px;font-size:13px}
+  #title{gap:8px}
+  .rules{font-size:13px}
+  #end{justify-content:center;padding-top:calc(8px + env(safe-area-inset-top))}
+  #end .panel{padding:10px 12px}
+  .stats{grid-template-columns:repeat(4,1fr);margin:8px 0}
+  .stats .wide{grid-column:span 2}
+  #end .panel{width:min(100%,560px)}
+  #endQuip{display:none}
+  #end .row .pbtn{padding:9px 8px}
+}
+@media (max-height:600px){ #peek{display:none} }
+@media (max-height:420px){
+  #title{gap:5px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(6px + env(safe-area-inset-bottom))}
+  .rules{font-size:12px;line-height:1.3}
+  .dbtn{padding:6px 6px 7px}
+  .dbtn b{font-size:16px}
+  .tap{font-size:18px;padding:4px 12px}
+  .howto{font-size:9px;line-height:1.45}
+}
+@media (prefers-reduced-motion:reduce){
+  #fog,#logo2{animation:none}
+  #app.bigshake{animation:none}
+  #shake.tremble{animation-name:trembleSoft}
+  #shake.kick{animation:trembleSoft .3s linear}
+}
+@keyframes trembleSoft{0%,100%{transform:none}25%{transform:translate(-1px,0)}75%{transform:translate(1px,0)}}
+</style>
+</head>
+<body>
+<div id="app" data-mode="title">
+  <canvas id="bg" aria-hidden="true"></canvas>
+  <div id="fogWrap" aria-hidden="true"><div id="fog"></div></div>
+
+  <header id="hud">
+    <button type="button" class="ib" id="homeBtn" aria-label="Back to menu"><i class="icon" data-icon="home"></i></button>
+    <div class="box" title="Mines left (each monster counts as one)"><i class="icon" data-icon="pumpkin"></i><span id="minesLeft" class="num">011</span></div>
+    <div id="creep" class="box" role="status" aria-label="Creep meter: actions until the monster moves">
+      <div class="dots"><i></i><i></i><i></i></div><span class="lbl">CREEP</span>
+    </div>
+    <div class="box" title="Time"><i class="icon" data-icon="clock"></i><span id="timer" class="num">000</span></div>
+    <button type="button" class="ib" id="muteBtn" aria-label="Mute sound" aria-pressed="false"><i class="icon" data-icon="sound"></i></button>
+    <button type="button" class="ib" id="restartBtn" aria-label="Restart"><i class="icon" data-icon="restart"></i></button>
+  </header>
+
+  <main id="boardWrap">
+    <div id="shake"><canvas id="board" role="img" aria-label="Minesweeper board"></canvas></div>
+    <div class="edge l"></div><div class="edge r"></div><div class="edge t"></div><div class="edge b"></div>
+  </main>
+
+  <footer id="controls">
+    <div id="hint">TAP: REVEAL · HOLD: FLAG</div>
+    <div class="ctrlRow">
+      <button type="button" id="flagBtn" class="pbtn ghost" aria-pressed="false"><i class="icon" data-icon="flag"></i><span id="flagLbl">FLAG: OFF</span></button>
+      <button type="button" id="tntBtn" class="pbtn ghost" aria-pressed="false" aria-label="TNT: tap open ground next to the monster"><i class="icon" data-icon="tnt"></i><span id="tntLbl">TNT ×3</span></button>
+    </div>
+  </footer>
+
+  <section id="title" class="screen show" aria-label="Title screen">
+    <button type="button" class="ib" id="titleMute" aria-label="Mute sound" aria-pressed="false"><i class="icon" data-icon="sound"></i></button>
+    <canvas id="logo1" role="img" aria-label="Minesweeper"></canvas>
+    <canvas id="logo2" role="img" aria-label="Something Moves"></canvas>
+    <canvas id="peek" aria-hidden="true"></canvas>
+    <p class="rules">Something moves under the tiles. <em>Numbers can lie.</em></p>
+    <div class="diff" role="radiogroup" aria-label="Difficulty">
+      <button type="button" class="dbtn" data-diff="easy" role="radio" aria-checked="true"><b>EASY</b><small>1 MONSTER</small></button>
+      <button type="button" class="dbtn" data-diff="hard" role="radio" aria-checked="false"><b>HARD</b><small>2 MONSTERS</small></button>
+      <button type="button" class="dbtn" data-diff="extreme" role="radio" aria-checked="false"><b>EXTREME</b><small>4 MONSTERS</small></button>
+    </div>
+    <button type="button" id="startBtn" class="tap">TAP TO START</button>
+    <p class="howto">STOMP OPEN GROUND TO LURE IT.<br>DON'T STOMP RIGHT ON IT!<br>TNT NEXT TO IT FLINGS IT AWAY:<br>AIM IT AT A PUMPKIN. KABOOM!</p>
+    <p id="best" class="best"></p>
+  </section>
+
+  <section id="end" class="screen" role="dialog" aria-modal="true" aria-labelledby="endTitle">
+    <div class="panel">
+      <canvas id="endTitle" role="img"></canvas>
+      <p id="endSub"></p>
+      <div class="stats">
+        <div><span>TIME</span><b id="stTime">0:00</b></div>
+        <div id="stMonsterBox"><span id="stMonsterLbl">MONSTER</span><b id="stMonster">-</b></div>
+        <div class="wide hot"><span>RANK</span><b id="stRank">-</b></div>
+        <div id="stScoreBox"><span>SCORE</span><b id="stScore">0</b></div>
+        <div id="stBestBox"><span id="stBestLbl">BEST TIME</span><b id="stBest">-</b></div>
+      </div>
+      <p id="endQuip"></p>
+      <div class="row">
+        <button type="button" id="againBtn" class="pbtn">PLAY AGAIN</button>
+        <button type="button" id="menuBtn" class="pbtn ghost">MENU</button>
+      </div>
+    </div>
+    <button type="button" id="viewBtn" class="pbtn ghost small">VIEW BOARD</button>
+  </section>
+</div>
+<canvas id="fx" aria-hidden="true"></canvas>
+<noscript><p style="position:fixed;top:0;right:0;bottom:0;left:0;display:grid;place-items:center;padding:24px;text-align:center;background:#0b0612;color:#ff8a1f;font:700 16px monospace">This game needs JavaScript. Something moves... but not without it.</p></noscript>
+
+<script>
+(() => {
+'use strict';
+
+// ======================================================================
+// Config
+// ======================================================================
+const Q = new URLSearchParams(location.search);
+const REC = Q.get('record') === '1';        // recording mode: slower tells, bigger flicker
+const TEST = Q.get('test') === '1';         // exposes window.__MSM + self-checks numbers after every move
+const SEED = Q.has('seed') ? (parseInt(Q.get('seed'), 10) >>> 0) : null;
+
+const DIFFS = {
+  easy: { w: 12, h: 12, mines: 20, mons: 1, par: 240, base: 2000, tnt: 4 },
+  hard: { w: 12, h: 12, mines: 20, mons: 2, par: 360, base: 3500, tnt: 6 },
+  extreme: { w: 12, h: 12, mines: 20, mons: 4, par: 480, base: 5000, tnt: 8 },
+};
+const MOVE_EVERY = 3;            // the monsters move once every N player actions
+const LONG_PRESS_MS = 400;
+const MOVE_TOL = 10;             // px a finger may drift before a press turns into a pan
+const MIN_TILE = 32, MAX_TILE = 60;
+const ART = 12;                  // tile sprites are 12x12 "art pixels"
+const FLICKER_MS = REC ? 1100 : 600;
+const FLICKER_SCALE = REC ? 1.5 : 1;
+const EYES_MS = REC ? 900 : 500;
+const EYES_CHANCE = 0.25;
+const TRAIL_LEN = 3;
+const SCRATCH_FADE_MS = REC ? 15000 : 9000;
+const TREMBLE_MS = REC ? 650 : 380;
+const SCARE_MS = 800;
+const LURE_RADIUS = 3;           // a stomp this close (in tiles) pulls the monster one step toward it
+const ARRIVE_GRACE_MS = 600;     // a tap that started this soon after it moved under the finger is ignored
+const LURE_HOLD_MS = 300;        // a wander on the same action as a lure waits this long, so the lure is seen
+const HIDE_WEIGHT = 3;           // when wandering, a hidden tile is this many times likelier than open ground
+const BOLT_STEP_MS = 55;         // animation time per tile of a TNT launch
+const LUNGE_STEP_MS = REC ? 420 : 280;   // after a point-blank stomp, its free extra steps play out this far apart
+const VEER = 0.25;               // a launch veers 45° to each side this often; it flies straight the rest of the time
+const KNOCK_CHAIN_MAX = 8;       // one launch can knock monsters on into each other at most this many times
+const BLAST_BONUS = 1500;        // score for each monster blown up, plus TNT_LEFT_BONUS per unused stick if all are
+const TNT_LEFT_BONUS = 300;
+
+const $ = id => document.getElementById(id);
+const DPR = () => Math.max(1, Math.min(3, window.devicePixelRatio || 1));          // board + fx
+const TEXT_DPR = () => Math.max(1, Math.min(4, window.devicePixelRatio || 1));     // small pixel-text canvases
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const easeOutBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const pad3 = n => n < 0 ? '-' + String(-n).padStart(2, '0') : String(n).padStart(3, '0');
+const fmtTime = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+const WORDS = ['no', 'one', 'two', 'three', 'four'];
+const word = n => WORDS[n] || String(n);
+const buzz = p => { try { if (navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) navigator.vibrate(p); } catch (e) { /* no haptics */ } };
+
+document.documentElement.style.setProperty('--tremble', TREMBLE_MS + 'ms');
+
+// Seedable RNG so ?seed=N games are reproducible.
+function mulberry32(a) {
+  return () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+let rng = Math.random;
+const rint = n => Math.floor(rng() * n);
+
+// localStorage can throw inside sandboxed iframes (itch.io) or private windows.
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('msm.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('msm.' + k, JSON.stringify(v)); } catch (e) { /* ignore */ } },
+};
+
+// ======================================================================
+// Sound (Web Audio, synthesized; created on the first user gesture)
+// ======================================================================
+const Snd = (() => {
+  let ctx = null, master = null, noiseBuf = null, dist = null;
+  let muted = store.get('muted', false) === true;
+  const VOL = 0.7;
+
+  function init() {
+    const ua = navigator.userActivation;
+    if (ua && !ua.isActive) return;          // e.g. Esc/Shift or a swipe: not a gesture that may start audio
+    if (ctx) { if (ctx.state !== 'running' && ctx.state !== 'closed' && !document.hidden) ctx.resume().catch(() => {}); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ctx = new AC(); } catch (e) { ctx = null; return; }
+    master = ctx.createGain();
+    master.gain.value = muted ? 0 : VOL;
+    master.connect(ctx.destination);
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    dist = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; dist[i] = (3 + 30) * x * 20 * Math.PI / 180 / (Math.PI + 30 * Math.abs(x)); }
+    // iOS unlock: play one silent sample inside the gesture.
+    const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0);
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  }
+  const live = () => ctx !== null && !muted;
+  const now = () => ctx.currentTime + 0.005;
+  function env(g, t, a, peak, d) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
+  }
+  function tone(type, f, t, dur, peak, f2) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    env(g, t, 0.005, peak, dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+  }
+  function hiss(t, dur, peak, type, f, f2, q) {
+    const s = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
+    s.buffer = noiseBuf; fl.type = type; fl.frequency.setValueAtTime(f, t);
+    if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    if (q) fl.Q.value = q;
+    env(g, t, 0.004, peak, dur);
+    s.connect(fl); fl.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.05);
+  }
+  return {
+    init,
+    get muted() { return muted; },
+    setMuted(m) {
+      muted = m; store.set('muted', m);
+      if (master) master.gain.setTargetAtTime(m ? 0 : VOL, ctx.currentTime, 0.02);
+    },
+    suspend() { if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {}); },
+    resume() { if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {}); },
+    click() { if (!live()) return; const t = now(); tone('square', 900 + Math.random() * 200, t, 0.03, 0.06, 600); tone('triangle', 2400, t, 0.015, 0.025); },
+    whoosh() { if (!live()) return; const t = now(); hiss(t, 0.22, 0.12, 'bandpass', 500, 2200, 1.2); tone('square', 820, t, 0.03, 0.05, 560); },
+    flag() { if (!live()) return; const t = now(); tone('sine', 240, t, 0.11, 0.38, 70); hiss(t, 0.05, 0.14, 'lowpass', 900); },
+    unflag() { if (!live()) return; const t = now(); tone('sine', 150, t, 0.08, 0.22, 290); },
+    heartbeat() { if (!live()) return; const t = now(); tone('sine', 64, t, 0.13, 0.42, 38); tone('sine', 58, t + 0.17, 0.15, 0.33, 36); },
+    drone() {
+      if (!live()) return;
+      const t = now(), end = t + 1.5;
+      const g = ctx.createGain(), lp = ctx.createBiquadFilter(), trem = ctx.createGain(), lfo = ctx.createOscillator(), lfoG = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.34, t + 0.18);
+      g.gain.setValueAtTime(0.34, t + 0.55);
+      g.gain.exponentialRampToValueAtTime(0.0001, end);
+      lp.type = 'lowpass'; lp.Q.value = 7;
+      lp.frequency.setValueAtTime(140, t); lp.frequency.exponentialRampToValueAtTime(620, t + 0.45); lp.frequency.exponentialRampToValueAtTime(120, end);
+      trem.gain.value = 0.75; lfo.frequency.value = 7; lfoG.gain.value = 0.3;
+      lfo.connect(lfoG); lfoG.connect(trem.gain); trem.connect(lp); lp.connect(g); g.connect(master);
+      for (const [f, type, v] of [[49, 'sawtooth', 0.5], [51.9, 'sawtooth', 0.5], [69.3, 'square', 0.16], [36.7, 'sine', 0.9]]) {
+        const o = ctx.createOscillator(), og = ctx.createGain();
+        o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.92, end);
+        og.gain.value = v; o.connect(og); og.connect(trem); o.start(t); o.stop(end + 0.1);
+      }
+      lfo.start(t); lfo.stop(end + 0.1);
+    },
+    stomp() { if (!live()) return; const t = now(); tone('sine', 92, t, 0.12, 0.5, 44); hiss(t, 0.09, 0.2, 'lowpass', 700, 150, 1); },
+    rumble() { if (!live()) return; const t = now(); tone('sine', 48, t, 0.4, 0.32, 36); tone('sawtooth', 55, t, 0.3, 0.05, 42); hiss(t, 0.35, 0.08, 'lowpass', 260, 110, 2); },
+    tnt() { if (!live()) return; const t = now(); hiss(t, 0.07, 0.22, 'highpass', 4200); hiss(t + 0.04, 0.55, 0.6, 'lowpass', 2600, 90, 1); tone('sine', 150, t + 0.04, 0.4, 0.5, 40); },
+    bolt() { if (!live()) return; const t = now(); hiss(t, 0.4, 0.2, 'bandpass', 260, 2000, 2); tone('sawtooth', 80, t, 0.35, 0.07, 260); },
+    scurry() { if (!live()) return; const t = now(); hiss(t, 0.14, 0.16, 'bandpass', 1500, 500, 1.4); tone('square', 130, t, 0.07, 0.05, 80); },
+    grumble() { if (!live()) return; const t = now(); tone('sine', 70, t, 0.4, 0.22, 45); hiss(t, 0.35, 0.07, 'lowpass', 300, 120, 2); },
+    sting() {
+      if (!live()) return;
+      const t = now(), ws = ctx.createWaveShaper(), g = ctx.createGain();
+      ws.curve = dist; ws.oversample = '2x';
+      env(g, t, 0.01, 0.42, 0.85); ws.connect(g); g.connect(master);
+      [311, 329.6, 466.2, 493.9, 622.3].forEach((f, k) => {
+        const o = ctx.createOscillator(), og = ctx.createGain();
+        o.type = k % 2 ? 'sawtooth' : 'square';
+        o.frequency.setValueAtTime(f * 1.5, t); o.frequency.exponentialRampToValueAtTime(f * 0.5, t + 0.8);
+        og.gain.value = 0.16; o.connect(og); og.connect(ws); o.start(t); o.stop(t + 0.9);
+      });
+      hiss(t, 0.5, 0.5, 'bandpass', 2600, 400, 0.8);
+      tone('sine', 55, t, 0.7, 0.6, 30);
+    },
+    boom() { if (!live()) return; const t = now(); hiss(t, 0.8, 0.7, 'lowpass', 1800, 60, 1); tone('sine', 110, t, 0.6, 0.6, 32); tone('square', 60, t, 0.25, 0.12, 30); },
+    win() {
+      if (!live()) return; const t = now();
+      [392, 466.2, 587.3, 698.5, 784].forEach((f, k) => tone('triangle', f, t + k * 0.11, 0.25, 0.14));
+      tone('triangle', 932.3, t + 0.6, 0.6, 0.12); tone('sine', 196, t + 0.6, 0.7, 0.12);
+    },
+  };
+})();
+
+// ======================================================================
+// Pixel art: 5x7 font, sprite maps, icon maps
+// ======================================================================
+const FONT = {};
+(() => {
+  const src = {
+    A: '01110 10001 10001 11111 10001 10001 10001', B: '11110 10001 10001 11110 10001 10001 11110',
+    C: '01110 10001 10000 10000 10000 10001 01110', D: '11110 10001 10001 10001 10001 10001 11110',
+    E: '11111 10000 10000 11110 10000 10000 11111', F: '11111 10000 10000 11110 10000 10000 10000',
+    G: '01110 10001 10000 10111 10001 10001 01111', H: '10001 10001 10001 11111 10001 10001 10001',
+    I: '01110 00100 00100 00100 00100 00100 01110', J: '00111 00010 00010 00010 00010 10010 01100',
+    K: '10001 10010 10100 11000 10100 10010 10001', L: '10000 10000 10000 10000 10000 10000 11111',
+    M: '10001 11011 10101 10101 10001 10001 10001', N: '10001 10001 11001 10101 10011 10001 10001',
+    O: '01110 10001 10001 10001 10001 10001 01110', P: '11110 10001 10001 11110 10000 10000 10000',
+    Q: '01110 10001 10001 10001 10101 10010 01101', R: '11110 10001 10001 11110 10100 10010 10001',
+    S: '01111 10000 10000 01110 00001 00001 11110', T: '11111 00100 00100 00100 00100 00100 00100',
+    U: '10001 10001 10001 10001 10001 10001 01110', V: '10001 10001 10001 10001 10001 01010 00100',
+    W: '10001 10001 10001 10101 10101 10101 01010', X: '10001 10001 01010 00100 01010 10001 10001',
+    Y: '10001 10001 01010 00100 00100 00100 00100', Z: '11111 00001 00010 00100 01000 10000 11111',
+    0: '01110 10001 10011 10101 11001 10001 01110', 1: '00100 01100 00100 00100 00100 00100 01110',
+    2: '01110 10001 00001 00010 00100 01000 11111', 3: '11111 00010 00100 00010 00001 10001 01110',
+    4: '00010 00110 01010 10010 11111 00010 00010', 5: '11111 10000 11110 00001 00001 10001 01110',
+    6: '00110 01000 10000 11110 10001 10001 01110', 7: '11111 00001 00010 00100 01000 01000 01000',
+    8: '01110 10001 10001 01110 10001 10001 01110', 9: '01110 10001 10001 01111 00001 00010 01100',
+    ' ': '00000 00000 00000 00000 00000 00000 00000', '!': '00100 00100 00100 00100 00100 00000 00100',
+    '?': '01110 10001 00001 00010 00100 00000 00100', '.': '00000 00000 00000 00000 00000 01100 01100',
+    ',': '00000 00000 00000 00000 01100 00100 01000', ':': '00000 01100 01100 00000 01100 01100 00000',
+    "'": '00100 00100 01000 00000 00000 00000 00000', '-': '00000 00000 00000 11111 00000 00000 00000',
+    '+': '00000 00100 00100 11111 00100 00100 00000', '/': '00000 00001 00010 00100 01000 10000 00000',
+  };
+  for (const k in src) FONT[k] = src[k].split(' ');
+})();
+
+const DIGIT_COLORS = [null, '#5ec8ff', '#7dff6a', '#ffd84a', '#c48bff', '#ff8a1f', '#4dffe0', '#ff8fd0', '#ffffff'];
+const FLICKER_RED = '#ff3344';
+
+const TILE_PAL = {
+  U: '#3b2263', H: '#6b46a6', S: '#1b0c30', d: '#311a55', l: '#4c2e7e', P: '#2a1647',
+  R: '#170d26', r: '#1b102c', G: '#0c0617',
+};
+const BOOM_PAL = { R: '#7a1024', r: '#7a1024', G: '#3a0610' };
+// Texture specks per unrevealed-tile variant: [x, y, colorKey]
+const TEX = [
+  [[3, 3, 'l'], [4, 3, 'd'], [8, 7, 'd'], [7, 7, 'l'], [4, 9, 'd']],
+  [[7, 2, 'd'], [2, 6, 'l'], [3, 6, 'd'], [9, 9, 'd'], [6, 8, 'l']],
+  [[5, 5, 'd'], [9, 3, 'l'], [2, 9, 'd'], [3, 9, 'l'], [8, 9, 'd']],
+];
+const FLAG_MAP = [
+  '............',
+  '....wFf.....',
+  '....wFFFf...',
+  '....wFFFFFf.',
+  '....wFFFf...',
+  '....wFf.....',
+  '....w.......',
+  '....w.......',
+  '....w.......',
+  '..bbbwbbb...',
+  '.bbbbbbbbb..',
+  '............',
+];
+const FLAG_PAL = { w: '#efe3cf', F: '#ff8a1f', f: '#c85a00', b: '#1b0c30' };
+const PUMPKIN_MAP = [
+  '............',
+  '.....gv.....',
+  '.....g......',
+  '..DOOoOOoD..',
+  '.DOOOoOOoOD.',
+  '.OYYOoOOYYO.',
+  '.OOYOoOOYOO.',
+  '.OOOOYYOOOO.',
+  '.OYYYYYYYYO.',
+  '.DOYOYYOYOD.',
+  '..DOOOOOOD..',
+  '............',
+];
+const PUMPKIN_PAL = { O: '#ff8a1f', o: '#d9650a', D: '#9e4300', Y: '#ffe066', g: '#3f7a2a', v: '#6bb83f' };
+const MONSTER_MAP = [
+  '............',
+  '...kkkkkk...',
+  '..kKKKKKKk..',
+  '.kKKKKKKKKk.',
+  '.kKEEKKEEKk.',
+  '.kKEPKKEPKk.',
+  '.kKKKKKKKKk.',
+  '.kKTMTMTMKk.',
+  '.kKKMMMMKKk.',
+  '.kKKKKKKKKk.',
+  '.kKkKKkKKkk.',
+  '..k..k..k...',
+];
+const MONSTER_PAL = { k: '#4a2a7a', K: '#120820', E: '#d8ff4a', P: '#1a2a00', T: '#f4ead2', M: '#5a0a22' };
+// Out in the open it shows as a cracked mound with its eyes peeking through.
+const MOUND_MAP = [
+  '............',
+  '............',
+  '............',
+  '....hhhh....',
+  '..hhDDDDhh..',
+  '.hDDcDDcDDh.',
+  '.DDcEDDEcDD.',
+  'dDDDcDDcDDDd',
+  'dddddddddddd',
+  '.d.d.d..d.d.',
+  '............',
+  '............',
+];
+const MOUND_PAL = { h: '#8a63b3', D: '#523272', d: '#2c1944', c: '#07030c', E: '#d8ff4a' };
+// What's left of a pumpkin a monster was blown up on: a scorched hole with a few embers (and room for a number).
+const CRATER_MAP = [
+  '............',
+  '...r....r...',
+  '.r..xxxx..r.',
+  '...xXXXXx...',
+  '..xXooooXx..',
+  'r.xXoeooXx.r',
+  '..xXoooeXx..',
+  '..xXooooXx..',
+  '...xXXXXx...',
+  '.r..xxxx..r.',
+  '...r....r...',
+  '............',
+];
+const CRATER_PAL = { r: '#7a55a0', x: '#5b3b6e', X: '#2c1944', o: '#07030c', e: '#ff8a1f' };
+const TNT_MAP = [
+  '.....Yy.....',
+  '......f.....',
+  '....RRRR....',
+  '....RrRR....',
+  '....RRRR....',
+  '....WWWW....',
+  '....RRRR....',
+  '....RrRR....',
+  '....RRRR....',
+  '....WWWW....',
+  '....RRRR....',
+  '............',
+];
+const TNT_PAL = { R: '#d42a2a', r: '#ff7a6a', W: '#f4ead2', f: '#a89070', Y: '#ffe066', y: '#ff8a1f' };
+const EYES_MAP = ['............', '............', '............', '............', '............',
+  '...EE..EE...', '............', '............', '............', '............', '............', '............'];
+const SCRATCH_MAP = (() => {
+  const g = Array.from({ length: 12 }, () => '.'.repeat(12).split(''));
+  for (let k = 0; k < 3; k++) for (let d = 0; d < 4; d++) g[4 + d][4 + 3 * k - d] = 's';
+  return g.map(r => r.join(''));
+})();
+const X_MAP = (() => {
+  const g = Array.from({ length: 12 }, () => '.'.repeat(12).split(''));
+  for (let k = 1; k < 11; k++) { g[k][k] = 'X'; g[k][11 - k] = 'X'; }
+  return g.map(r => r.join(''));
+})();
+
+const ICONS = {
+  pumpkin: ['....g....', '...gg....', '.oOOOOOo.', 'oOOOOOOOo', 'OYYOOOYYO', 'OOOOYOOOO', 'OYOYYYOYO', 'oOYYYYYOo', '.oOOOOOo.'],
+  clock: ['WWWWWWW', '.W...W.', '.WOOOW.', '..WOW..', '...O...', '..W.W..', '.W.O.W.', '.WOOOW.', 'WWWWWWW'],
+  sound: ['....W....', '...WW..W.', 'WWWWW...W', 'WWWWW.W.W', 'WWWWW.W.W', 'WWWWW...W', '...WW..W.', '....W....'],
+  mute: ['....W....', '...WW....', 'WWWWWR..R', 'WWWWW.RR.', 'WWWWW.RR.', 'WWWWWR..R', '...WW....', '....W....'],
+  restart: ['..WWWW.W.', '.W....WW.', 'W....WWW.', 'W........', 'W.......W', 'W.......W', '.W.....W.', '..WWWWW..'],
+  home: ['....W....', '...WWW...', '..WWWWW..', '.WWWWWWW.', 'WWWWWWWWW', '.WW...WW.', '.WW.O.WW.', '.WW.O.WW.'],
+  flag: ['.WOO.....', '.WOOOO...', '.WOOOOOO.', '.WOOOO...', '.WOO.....', '.W.......', '.W.......', 'WWW......'],
+  tnt: ['...Yy..', '....f..', '..RRR..', '..RrR..', '..WWW..', '..RRR..', '..RrR..', '..WWW..', '..RRR..'],
+  tntLit: ['..YyY..', '...f...', '..DDD..', '..DdD..', '..WWW..', '..DDD..', '..DdD..', '..WWW..', '..DDD..'],
+};
+const ICON_PAL = { W: '#e9ddff', O: '#ff8a1f', o: '#c85a00', g: '#5fa83a', R: '#ff3344', Y: '#ffe066', r: '#ff8a7a', f: '#a89070', y: '#ff8a1f', D: '#5a0614', d: '#9c1020' };
+
+function mkCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+// Paint a map of chars onto ctx; each art pixel spans `unit` device px (edges rounded so tiles stay seamless).
+function drawMap(ctx, rows, pal, ox, oy, unit) {
+  for (let y = 0; y < rows.length; y++) {
+    const row = rows[y];
+    const y0 = Math.round(oy + y * unit), y1 = Math.round(oy + (y + 1) * unit);
+    for (let x = 0; x < row.length; x++) {
+      const col = pal[row[x]];
+      if (!col) continue;
+      const x0 = Math.round(ox + x * unit), x1 = Math.round(ox + (x + 1) * unit);
+      ctx.fillStyle = col;
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    }
+  }
+}
+
+function unrevMap(variant, pressed) {
+  const rows = [];
+  for (let y = 0; y < ART; y++) {
+    let s = '';
+    for (let x = 0; x < ART; x++) {
+      if (pressed) s += (x === 0 || y === 0) ? 'S' : 'P';
+      else if ((y === 0 && x < ART - 1) || (x === 0 && y < ART - 1)) s += 'H';
+      else if (y === ART - 1 || x === ART - 1) s += 'S';
+      else s += 'U';
+    }
+    rows.push(s);
+  }
+  if (!pressed) for (const [x, y, ch] of TEX[variant]) rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1);
+  return rows;
+}
+function revMap(variant) {
+  const rows = [];
+  for (let y = 0; y < ART; y++) {
+    let s = '';
+    for (let x = 0; x < ART; x++) s += (x === ART - 1 || y === ART - 1) ? 'G' : (variant ? 'r' : 'R');
+    rows.push(s);
+  }
+  return rows;
+}
+// Digits use the 5x7 font with a 1px "fake bold" so they read at small sizes.
+function digitMap(n) {
+  const g = Array.from({ length: ART }, () => '.'.repeat(ART).split(''));
+  const glyph = FONT[String(n)];
+  for (let y = 0; y < 7; y++) for (let x = 0; x < 5; x++) if (glyph[y][x] === '1') { g[2 + y][3 + x] = 'n'; g[2 + y][4 + x] = 'n'; }
+  return g.map(r => r.join(''));
+}
+
+// Render a string with the pixel font into a canvas (crisp at any devicePixelRatio).
+function pixelText(cv, text, scale, fill, shadow) {
+  const dpr = TEXT_DPR();
+  const lines = String(text).toUpperCase().split('\n');
+  const lw = l => Math.max(0, l.length * 6 - 1);
+  const cols = Math.max(...lines.map(lw));
+  const rows = lines.length * 9 - 2;
+  const sh = shadow ? 1 : 0;
+  const u = scale * dpr;
+  cv.width = Math.ceil((cols + sh) * u); cv.height = Math.ceil((rows + sh) * u);
+  cv.style.width = cv.width / dpr + 'px'; cv.style.height = cv.height / dpr + 'px';
+  const c = cv.getContext('2d');
+  c.clearRect(0, 0, cv.width, cv.height);
+  const passes = shadow ? [[1, shadow], [0, fill]] : [[0, fill]];
+  for (const [off, color] of passes) {
+    lines.forEach((line, li) => {
+      const x0 = Math.floor((cols - lw(line)) / 2);
+      for (let ci = 0; ci < line.length; ci++) {
+        const glyph = FONT[line[ci]] || FONT['?'];
+        for (let gy = 0; gy < 7; gy++) for (let gx = 0; gx < 5; gx++) {
+          if (glyph[gy][gx] !== '1') continue;
+          const X = x0 + ci * 6 + gx + off, Y = li * 9 + gy + off;
+          const px = Math.round(X * u), py = Math.round(Y * u);
+          c.fillStyle = typeof color === 'function' ? color(gy) : color;
+          c.fillRect(px, py, Math.round((X + 1) * u) - px, Math.round((Y + 1) * u) - py);
+        }
+      }
+    });
+  }
+  return cols;
+}
+const orangeGrad = gy => gy < 2 ? '#ffc266' : gy < 5 ? '#ff8a1f' : '#e0620a';
+
+const iconCache = {};
+function iconURL(name) {
+  if (iconCache[name]) return iconCache[name];
+  const m = ICONS[name], sc = 6, w = Math.max(...m.map(r => r.length));
+  const c = mkCanvas(w * sc, m.length * sc);
+  drawMap(c.getContext('2d'), m, ICON_PAL, 0, 0, sc);
+  return (iconCache[name] = c.toDataURL());
+}
+function setIcon(el, name) { el.dataset.icon = name; el.style.backgroundImage = 'url(' + iconURL(name) + ')'; }
+
+// Big jump-scare face, generated procedurally at 48x40 art pixels.
+function buildFace() {
+  const W = 48, H = 40, g = Array.from({ length: H }, () => new Array(W).fill('.'));
+  const cx = 23.5, cy = 18.5, drips = [3, 6, 2, 5, 7, 3, 4, 6, 2, 5];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const dx = (x - cx) / 22.5, dy = (y - cy) / (y < cy ? 17.5 : 15.5);
+    let inside = dx * dx + dy * dy <= 1;
+    if (!inside && y > cy && Math.abs(dx) < 0.86 && (x % 5 === 1 || x % 5 === 2)) {
+      const bottom = cy + 15.5 * Math.sqrt(Math.max(0, 1 - dx * dx));
+      if (y <= bottom + drips[Math.floor(x / 5) % 10]) inside = true;
+    }
+    if (inside) g[y][x] = (dx < -0.25 && dy < -0.35 && dx * dx + dy * dy > 0.62) ? 'b' : 'B';
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (g[y][x] === '.') continue;
+    const out = (xx, yy) => xx < 0 || yy < 0 || xx >= W || yy >= H || g[yy][xx] === '.';
+    if (out(x - 1, y) || out(x + 1, y) || out(x, y - 1) || out(x, y + 1)) g[y][x] = 'K';
+  }
+  // eyes: one big, one slightly smaller (goofy)
+  for (const [ex, ey, rx, ry] of [[14.5, 14.5, 7, 6.2], [33, 15, 6, 5.4]]) {
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const d = ((x - ex) / rx) ** 2 + ((y - ey) / ry) ** 2;
+      if (d <= 1) g[y][x] = d > 0.6 ? 'e' : 'E';
+      if (Math.abs(x - (ex + 0.5)) <= 1 && Math.abs(y - (ey + 1)) <= 2.2) g[y][x] = 'P';
+    }
+    g[Math.round(ey - 3)][Math.round(ex - 3)] = 'W';
+    g[Math.round(ey - 2)][Math.round(ex - 3)] = 'W';
+    g[Math.round(ey - 3)][Math.round(ex - 2)] = 'W';
+  }
+  // grin with jagged teeth and a tongue
+  for (let x = 8; x <= 39; x++) {
+    const t = (x - 23.5) / 15.5;
+    if (t * t > 1) continue;
+    const top = Math.round(25 - 3.5 * t * t), bot = Math.round(33 - 2 * t * t);
+    for (let y = top; y <= bot; y++) {
+      let ch = 'M';
+      const kt = (x - 8) % 4, kb = (x - 10 + 400) % 4;
+      if ((y === top && kt < 3) || (y === top + 1 && kt === 1)) ch = 'T';
+      else if ((y === bot && kb < 3) || (y === bot - 1 && kb === 1)) ch = 'T';
+      else if (((x - 27) / 4.5) ** 2 + ((y - 31) / 2.2) ** 2 <= 1) ch = 'R';
+      g[y][x] = ch;
+    }
+  }
+  const pal = { K: '#3a2060', B: '#120820', b: '#24133d', e: '#8fd12a', E: '#d8ff4a', P: '#0a0510', W: '#ffffff', M: '#3a0614', T: '#f4ead2', R: '#ff5a8a' };
+  const c = mkCanvas(W, H);
+  drawMap(c.getContext('2d'), g.map(r => r.join('')), pal, 0, 0, 1);
+  return c;
+}
+
+// ======================================================================
+// Sprites (rebuilt whenever the tile size in device pixels changes)
+// ======================================================================
+let S = null;
+function glowSprite(src, color, blur, pad) {
+  const c = mkCanvas(src.width + pad * 2, src.height + pad * 2), x = c.getContext('2d');
+  x.shadowColor = color; x.shadowBlur = blur;
+  x.drawImage(src, pad, pad); x.drawImage(src, pad, pad);
+  x.shadowBlur = 0; x.drawImage(src, pad, pad);
+  return c;
+}
+function buildSprites(T) {
+  const unit = T / ART;
+  const mk = (rows, pal) => { const c = mkCanvas(T, T); drawMap(c.getContext('2d'), rows, pal, 0, 0, unit); return c; };
+  const pad = Math.max(2, Math.round(T * 0.35));
+  const s = {
+    T, pad,
+    unrev: [0, 1, 2].map(v => mk(unrevMap(v, false), TILE_PAL)),
+    unrevPress: mk(unrevMap(0, true), TILE_PAL),
+    rev: [mk(revMap(0), TILE_PAL), mk(revMap(1), TILE_PAL)],
+    boom: mk(revMap(0), BOOM_PAL),
+    digit: [null], digitRed: [null],
+    flag: mk(FLAG_MAP, FLAG_PAL),
+    pumpkin: mk(PUMPKIN_MAP, PUMPKIN_PAL),
+    monster: mk(MONSTER_MAP, MONSTER_PAL),
+    mound: mk(MOUND_MAP, MOUND_PAL),
+    crater: mk(CRATER_MAP, CRATER_PAL),
+    tnt: mk(TNT_MAP, TNT_PAL),
+    eyes: glowSprite(mk(EYES_MAP, { E: '#eaff8a' }), 'rgba(198,255,74,1)', T * 0.3, pad),
+    scratch: glowSprite(mk(SCRATCH_MAP, { s: '#c6ff4a' }), 'rgba(198,255,74,.95)', T * 0.16, pad),
+  };
+  for (let n = 1; n <= 8; n++) {
+    s.digit[n] = mk(digitMap(n), { n: DIGIT_COLORS[n] });
+    s.digitRed[n] = glowSprite(mk(digitMap(n), { n: FLICKER_RED }), 'rgba(255,30,50,1)', T * (REC ? 0.45 : 0.32), pad);
+  }
+  const wrong = mk(FLAG_MAP, FLAG_PAL);
+  drawMap(wrong.getContext('2d'), X_MAP, { X: FLICKER_RED }, 0, 0, unit);
+  s.wrong = wrong;
+  S = s;
+}
+let FACE = null;
+
+// ======================================================================
+// DOM
+// ======================================================================
+const app = $('app'), bg = $('bg'), wrap = $('boardWrap'), shakeEl = $('shake'), board = $('board');
+const bctx = board.getContext('2d');
+const minesEl = $('minesLeft'), timerEl = $('timer'), creepEl = $('creep');
+const creepDots = [...creepEl.querySelectorAll('i')], creepLbl = creepEl.querySelector('.lbl');
+const flagBtn = $('flagBtn'), flagLbl = $('flagLbl'), tntBtn = $('tntBtn'), tntLbl = $('tntLbl'), hintEl = $('hint');
+const titleEl = $('title'), endEl = $('end'), fx = $('fx');
+const muteBtns = [$('muteBtn'), $('titleMute')];
+const edges = { l: wrap.querySelector('.edge.l'), r: wrap.querySelector('.edge.r'), t: wrap.querySelector('.edge.t'), b: wrap.querySelector('.edge.b') };
+const peek = $('peek'), peekCtx = peek.getContext('2d');
+
+// ======================================================================
+// Game state & rules
+// ======================================================================
+let mode = 'title';                 // 'title' | 'play' | 'end'
+let diff = store.get('diff', 'easy');
+if (typeof diff !== 'string' || !Object.prototype.hasOwnProperty.call(DIFFS, diff)) diff = 'easy';
+let flagMode = false;
+let tntMode = false;
+// Best times are kept apart for the two kinds of win ('blast' = KABOOM, 'clear' = board cleared). The v2 keys
+// start fresh: Easy grew to 12x12 and Hard got a second monster, so older times aren't comparable.
+const bestKey = (kind, d) => 'best.v2.' + kind + '.' + d;
+const bestOf = (kind, d) => { const v = store.get(bestKey(kind, d), null); return Number.isFinite(v) && v >= 0 ? Math.floor(v) : null; };
+let G = null;
+let gameNo = 0;
+let dirty = true;
+const parts = [];
+const nbrCache = {};
+
+function neighbors(W, H) {
+  const key = W + 'x' + H;
+  if (nbrCache[key]) return nbrCache[key];
+  const out = [];
+  for (let i = 0; i < W * H; i++) {
+    const x = i % W, y = (i / W) | 0, list = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const xx = x + dx, yy = y + dy;
+      if (xx >= 0 && yy >= 0 && xx < W && yy < H) list.push(yy * W + xx);
+    }
+    out.push(Int16Array.from(list));
+  }
+  return (nbrCache[key] = out);
+}
+
+function newGame(dkey) {
+  const D = DIFFS[dkey], N = D.w * D.h;
+  if (G) { clearTimeout(G.moveTimer); clearTimeout(G.lungeTimer); }
+  gameNo++;
+  rng = mulberry32(SEED !== null ? SEED + (gameNo - 1) * 7919 : (Math.random() * 4294967296) >>> 0);
+  G = {
+    id: gameNo, diff: dkey, W: D.w, H: D.h, N, M: D.mines,
+    mines: new Uint8Array(N), revealed: new Uint8Array(N), flagged: new Uint8Array(N), nums: new Int8Array(N),
+    nbr: neighbors(D.w, D.h),
+    flickT: new Float64Array(N), flickFrom: new Int8Array(N), flickUntil: 0,
+    generated: false, mons: [], pendingMove: false, moveTimer: 0, holdUntil: 0, surfaced: false,
+    lungeLeft: 0, lungeMon: -1, lungeTimer: 0, lunged: false, hintHoldUntil: 0,
+    actions: 0, totalActions: 0, beats: 0, moves: 0, stuck: 0, lures: 0, stomps: 0,
+    tnt: D.tnt, tntUsed: 0, tntFx: null, bolts: [], boltsEnd: 0, kills: 0, craters: [], blasted: false,
+    revealedCount: 0, flags: 0,
+    elapsed: 0, running: false,
+    over: false, won: false, lostBy: null, explodedIdx: -1, overT: 0, delay: null, monDelay: 0, newBest: false,
+    checks: 0, mismatches: 0, log: [],
+  };
+  // ?test=1 only: the first monster's tile, for tests written against one monster
+  if (TEST) Object.defineProperty(G, 'monster', { get() { return this.mons.length ? this.mons[0].i : -1; }, set(v) { this.mons[0].i = v; } });
+  parts.length = 0;
+  cancelPress();
+  setTntMode(false);
+}
+
+// The monsters: G.mons holds one { i: tile, dead, trail: [{ i, t }] (scratch marks), eyes: when they last glowed
+// (-1: not glowing), arrivedT: when it last arrived on its tile }. A live monster counts as a mine wherever it is.
+function monAt(j) {
+  for (let k = 0; k < G.mons.length; k++) if (!G.mons[k].dead && G.mons[k].i === j) return k;
+  return -1;
+}
+function liveCount() { let n = 0; for (const m of G.mons) if (!m.dead) n++; return n; }
+
+function countAt(i) {
+  const nb = G.nbr[i];
+  let n = 0;
+  for (let k = 0; k < nb.length; k++) { const j = nb[k]; if (G.mines[j] || monAt(j) >= 0) n++; }
+  return n;
+}
+
+// Place static mines after the first tap: its 3x3 area is always clear, so it opens a region.
+function generate(first) {
+  const safe = new Set([first, ...G.nbr[first]]);
+  const cand = [];
+  for (let i = 0; i < G.N; i++) if (!safe.has(i)) cand.push(i);
+  for (let k = 0; k < G.M && k < cand.length; k++) {
+    const j = k + rint(cand.length - k);
+    const t = cand[k]; cand[k] = cand[j]; cand[j] = t;
+    G.mines[cand[k]] = 1;
+  }
+  G.generated = true;
+  G.running = true;
+}
+
+// Spawn the monsters on hidden, free tiles: ideally out of sight of the opened area, able to move, and (when there
+// are two) not close to each other.
+function placeMonsters(n) {
+  const walk = j => !G.mines[j] && !G.flagged[j] && monAt(j) < 0;
+  for (let k = 0; k < n; k++) {
+    const tiers = [[], [], [], []];
+    for (let i = 0; i < G.N; i++) {
+      if (G.revealed[i] || G.mines[i] || G.flagged[i] || monAt(i) >= 0) continue;
+      const nb = G.nbr[i], seen = nb.some(j => G.revealed[j]), canMove = nb.some(walk);
+      const apart = G.mons.every(m => tileDist(m.i, i) >= 3);
+      (!canMove ? tiers[3] : !apart ? tiers[2] : seen ? tiers[1] : tiers[0]).push(i);
+    }
+    const pool = tiers.find(t => t.length);
+    if (!pool) break;
+    G.mons.push({ i: pool[rint(pool.length)], dead: false, trail: [], eyes: -1, arrivedT: 0 });
+  }
+}
+
+function floodReveal(start) {
+  const stack = [start];
+  while (stack.length) {
+    const i = stack.pop();
+    if (G.revealed[i] || G.flagged[i]) continue;
+    G.revealed[i] = 1; G.revealedCount++;
+    const n = countAt(i);
+    G.nums[i] = n; G.flickT[i] = 0;
+    if (n === 0) for (const j of G.nbr[i]) if (!G.revealed[j] && !G.flagged[j]) stack.push(j);
+  }
+}
+
+// Recompute every revealed number from scratch (static mines + where the monsters are now).
+function recompute(flicker, at) {
+  const now = at || performance.now();
+  let changed = 0;
+  for (let i = 0; i < G.N; i++) {
+    if (!G.revealed[i]) continue;
+    const n = countAt(i);
+    if (n !== G.nums[i]) {
+      if (flicker) { G.flickT[i] = now; G.flickFrom[i] = G.nums[i]; }
+      G.nums[i] = n; changed++;
+    }
+  }
+  if (changed && flicker) G.flickUntil = now + FLICKER_MS;
+  if (TEST) {
+    const bad = verifyNumbers();
+    G.checks++;
+    if (bad) { G.mismatches += bad; console.error('[MSM] number mismatch after recompute: ' + bad + ' tile(s)'); }
+  }
+  return changed;
+}
+
+// Independent check (coordinates instead of the neighbor cache) used by tests.
+function verifyNumbers() {
+  const live = new Set(G.mons.filter(m => !m.dead).map(m => m.i));
+  let bad = 0;
+  for (let i = 0; i < G.N; i++) {
+    if (!G.revealed[i]) continue;
+    const x = i % G.W, y = (i / G.W) | 0;
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= G.W || yy >= G.H) continue;
+      const j = yy * G.W + xx;
+      if (G.mines[j] || live.has(j)) n++;
+    }
+    if (n !== G.nums[i]) bad++;
+  }
+  return bad;
+}
+
+function actReveal(i) {
+  if (settleMove()) return false;
+  if (!G || G.over || i < 0 || i >= G.N || G.revealed[i] || G.flagged[i]) return false;
+  if (!G.generated) {
+    generate(i);
+    floodReveal(i);
+    placeMonsters(DIFFS[G.diff].mons);
+    recompute(false);
+    Snd.whoosh();
+    afterAction();
+    return true;
+  }
+  if (G.mines[i]) { lose('mine', i); return true; }
+  if (monAt(i) >= 0) { lose('monster', i); return true; }
+  const before = G.revealedCount;
+  floodReveal(i);
+  if (G.revealedCount - before > 1) Snd.whoosh(); else Snd.click();
+  afterAction();
+  return true;
+}
+
+// Tap on open ground. Every monster within LURE_RADIUS gets pulled one step closer; stomping one is the end.
+function actStomp(i) {
+  if (settleMove()) return false;
+  if (!G || G.over || !G.generated || i < 0 || i >= G.N || !G.revealed[i]) return false;
+  if (monAt(i) >= 0) { lose('stomp', i); return true; }
+  G.stomps++;
+  Snd.stomp();
+  buzz(15);
+  burst(i, 12, ['#7a55a0', '#5b3b6e', '#3b2450', '#a58fc8'], 0.55);
+  // the nearest comes first, so it gets first pick of the tiles toward the stomp
+  const near = [];
+  G.mons.forEach((m, k) => { if (!m.dead && tileDist(i, m.i) <= LURE_RADIUS) near.push(k); });
+  near.sort((a, b) => tileDist(i, G.mons[a].i) - tileDist(i, G.mons[b].i) || a - b);
+  let lured = false;
+  for (const k of near) lured = lureToward(k, i) || lured;
+  if (lured) recompute(true);
+  afterAction();
+  return true;
+}
+
+// TNT on open ground. Every monster right next to it gets launched away from the blast (see launch()).
+function actTNT(i) {
+  if (settleMove()) return false;
+  if (!G || G.over || !G.generated || i < 0 || i >= G.N || !G.revealed[i] || G.tnt <= 0) return false;
+  if (monAt(i) >= 0) { lose('tnt', i); return true; }
+  const now = performance.now();
+  G.tnt--; G.tntUsed++;
+  G.tntFx = { i, t0: now };
+  setTntMode(false);
+  Snd.tnt();
+  buzz([30, 30, 60]);
+  kick();
+  burst(i, 26, ['#ff8a1f', '#ffe066', '#ff3344', '#f4ead2'], 1.3);
+  const hit = [];
+  G.mons.forEach((m, k) => { if (!m.dead && tileDist(i, m.i) === 1) hit.push(k); });
+  const res = hit.length ? launch(i, hit, now) : null;
+  if (G.over) { updateHUD(); return true; }
+  if (!res) flashHint("TOO FAR! IT DIDN'T\nFEEL A THING");
+  else if (!res.moved) flashHint(res.veered ? "IT VEERED, BUT HAD\nNOWHERE TO FLY" : "IT'S PINNED:\nNOWHERE TO FLY");
+  afterAction();
+  return true;
+}
+
+function actFlag(i) {
+  if (settleMove()) return false;
+  if (!G || G.over || !G.generated || i < 0 || i >= G.N || G.revealed[i]) return false;
+  if (G.flagged[i]) { G.flagged[i] = 0; G.flags--; Snd.unflag(); }
+  else { G.flagged[i] = 1; G.flags++; Snd.flag(); }
+  afterAction();
+  return true;
+}
+
+function tileDist(a, b) {
+  return Math.max(Math.abs(a % G.W - b % G.W), Math.abs(((a / G.W) | 0) - ((b / G.W) | 0)));
+}
+
+function afterAction() {
+  G.totalActions++;
+  if (boardCleared()) { win('clear', Math.max(0, G.boltsEnd - performance.now())); return; }   // after anything still flying lands
+  if (liveCount()) {
+    G.actions++;
+    if (G.actions >= MOVE_EVERY) {
+      G.actions = 0;
+      // After a lure or a launch, its scheduled step waits until that move has been seen (see settleMove).
+      if (performance.now() < G.holdUntil) deferMove(G.holdUntil);
+      else { monsterMove(); if (boardCleared()) { win('clear'); return; } }
+    }
+    else if (G.actions === MOVE_EVERY - 1) tremble();
+  }
+  updateHUD();
+  dirty = true;
+}
+
+function deferMove(at) {
+  const id = G.id;
+  G.pendingMove = true;
+  clearTimeout(G.moveTimer);
+  G.moveTimer = setTimeout(() => { if (G.id === id) settleMove(); }, at - performance.now());
+}
+// Finishes a lunge that is still playing out, then runs a scheduled move that was held back after a lure or a
+// launch. Returns true if that ended the game.
+function settleMove() {
+  if (!G) return false;
+  if (G.lungeLeft) {
+    clearTimeout(G.lungeTimer);
+    while (G.lungeLeft && !G.over) if (lungeStep()) return true;
+    G.lungeLeft = 0;
+  }
+  if (!G.pendingMove) return false;
+  G.pendingMove = false;
+  clearTimeout(G.moveTimer);
+  if (G.over) return true;
+  monsterMove();
+  if (boardCleared()) { win('clear'); return true; }
+  updateHUD();
+  dirty = true;
+  return false;
+}
+
+// Every safe tile is open, except the ones monsters may be hiding under (those can't be dug up safely).
+function boardCleared() {
+  let hidden = 0;
+  for (const m of G.mons) if (!m.dead && !G.revealed[m.i]) hidden++;
+  return G.revealedCount + hidden >= G.N - G.M;
+}
+
+// Tiles monster k can crawl onto: any adjacent (8-way) tile, open or hidden, that isn't a pumpkin, a flag or
+// another monster.
+function monsterOptions(k) {
+  const opts = [];
+  for (const j of G.nbr[G.mons[k].i]) if (!G.mines[j] && !G.flagged[j] && monAt(j) < 0) opts.push(j);
+  return opts;
+}
+// recount: false when the caller moves several monsters at once and recounts once after (so every flicker starts
+// from the number the player saw, and a number one leaves and another enters doesn't flicker at all)
+function stepMonster(k, to, now, recount = true) {
+  const m = G.mons[k];
+  m.trail.unshift({ i: m.i, t: now });
+  if (m.trail.length > TRAIL_LEN) m.trail.length = TRAIL_LEN;
+  m.i = to;
+  m.arrivedT = now;
+  if (recount) recompute(true);
+  if (G.revealed[to]) surfaced();
+}
+// The first time one shows up on open ground, say what the mound is.
+function surfaced() {
+  // while the first lunge or a kill is announced (including any move it held back) this one waits for next time
+  if (G.surfaced || G.lungeLeft || performance.now() < G.hintHoldUntil) return;
+  G.surfaced = true;
+  flashHint("THAT MOUND IS IT!\nDON'T STOMP RIGHT ON IT", 2600);
+}
+
+// A random step. It likes the dark, so hidden tiles weigh HIDE_WEIGHT times more than open ground.
+function wanderPick(opts) {
+  let total = 0;
+  for (const j of opts) total += G.revealed[j] ? 1 : HIDE_WEIGHT;
+  let r = rng() * total;
+  for (const j of opts) { r -= G.revealed[j] ? 1 : HIDE_WEIGHT; if (r < 0) return j; }
+  return opts[opts.length - 1];
+}
+
+// The scheduled move, every MOVE_EVERY actions: each monster takes one random step (see wanderPick).
+function monsterMove() {
+  const now = performance.now();
+  let moved = false;
+  G.beats++;
+  for (let k = 0; k < G.mons.length; k++) {
+    const m = G.mons[k];
+    if (m.dead) continue;
+    const from = m.i, opts = monsterOptions(k);
+    if (!opts.length) {
+      G.stuck++;
+      if (TEST) G.log.push({ kind: 'move', mon: k, from, to: from, opts: [] });
+      continue;
+    }
+    const to = wanderPick(opts), eyes = rng() < EYES_CHANCE;
+    G.moves++;
+    m.eyes = eyes && !G.revealed[to] ? now : -1;   // in the open its mound already gives it away
+    stepMonster(k, to, now, false);
+    if (TEST) G.log.push({ kind: 'move', mon: k, from, to, opts });
+    moved = true;
+  }
+  if (moved) recompute(true);
+  if (moved) Snd.drone(); else Snd.grumble();
+  return moved;
+}
+
+// Pulled by a stomp: one step that gets strictly closer to the stomp (ties: the straighter line, then random).
+// Right next to it, that step lands on the stomped tile and it lunges on (see startLunge).
+function lureToward(k, s) {
+  const m = G.mons[k], from = m.i, d0 = tileDist(from, s), opts = monsterOptions(k);
+  let best = [], bd = Infinity, be = Infinity;
+  for (const j of opts) {
+    const d = tileDist(j, s);
+    if (d >= d0) continue;
+    const e = (j % G.W - s % G.W) ** 2 + (((j / G.W) | 0) - ((s / G.W) | 0)) ** 2;
+    if (d < bd || (d === bd && e < be)) { bd = d; be = e; best = [j]; }
+    else if (d === bd && e === be) best.push(j);
+  }
+  if (!best.length) return false;
+  const to = best[rint(best.length)];
+  G.lures++;
+  m.eyes = -1;
+  const now = performance.now();
+  if (d0 === 1) { G.lungeLeft = 1 + rint(2); G.lungeMon = k; }
+  stepMonster(k, to, now, false);              // actStomp recounts once all of them have moved
+  G.holdUntil = Math.max(G.holdUntil, now + LURE_HOLD_MS);
+  if (TEST) G.log.push({ kind: 'lure', mon: k, from, to, opts, stomp: s, t: now });
+  Snd.rumble();
+  if (d0 === 1) startLunge(now);
+  return true;
+}
+
+// A stomp right next to one: after landing on the stomped tile it scurries on for G.lungeLeft (1 or 2) more steps,
+// one every LUNGE_STEP_MS so they can be followed. They're free (the creep meter doesn't count them) and, like a
+// wander, they prefer hidden tiles. The board ignores taps until they're done.
+function startLunge(now) {
+  G.holdUntil = Math.max(G.holdUntil, now + G.lungeLeft * LUNGE_STEP_MS + LURE_HOLD_MS);
+  if (!G.lunged) { G.lunged = true; G.hintHoldUntil = now + 2400; flashHint('TOO CLOSE! IT LUNGES\nAND SCURRIES OFF', 2400); }
+  const id = G.id;
+  const tick = () => {
+    if (G.id !== id || G.over || !G.lungeLeft) return;
+    if (!lungeStep() && G.lungeLeft) G.lungeTimer = setTimeout(tick, LUNGE_STEP_MS);
+  };
+  clearTimeout(G.lungeTimer);
+  G.lungeTimer = setTimeout(tick, LUNGE_STEP_MS);
+}
+// One of those steps. Returns true if it ended the game (it can crawl off the last safe tile left to open).
+function lungeStep() {
+  const k = G.lungeMon, from = G.mons[k].i, opts = monsterOptions(k);
+  if (!opts.length) {
+    G.lungeLeft = 0;
+    if (TEST) G.log.push({ kind: 'lunge', mon: k, from, to: from, opts });
+    return false;
+  }
+  const to = wanderPick(opts);
+  G.mons[k].eyes = -1;
+  stepMonster(k, to, performance.now());
+  G.lungeLeft--;
+  if (TEST) G.log.push({ kind: 'lunge', mon: k, from, to, opts, t: performance.now() });
+  Snd.scurry();
+  dirty = true;
+  if (boardCleared()) { G.lungeLeft = 0; win('clear'); return true; }
+  return false;
+}
+
+// The 8 directions as [dx, dy], clockwise from east, so k ± 1 is 45° to either side of k.
+const DIR8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+const dirIndex = d => DIR8.findIndex(v => v[0] === d[0] && v[1] === d[1]);
+// [d, 45° one way, 45° the other] for a direction d. Launches pick from these, and so do knocks (never straight on).
+const fan = d => { const k = dirIndex(d); return [DIR8[k], DIR8[(k + 7) % 8], DIR8[(k + 1) % 8]]; };
+// Where TNT at tntAt can fling the monster at from: [straight away from the blast, 45° one way, 45° the other].
+function launchDirs(tntAt, from) {
+  const W = G.W;
+  return fan([Math.sign(from % W - tntAt % W), Math.sign(((from / W) | 0) - ((tntAt / W) | 0))]);
+}
+
+// TNT right next to monsters ks: each bolts away from the blast in a straight line (half the time straight away, a
+// quarter of the time 45° to either side), one after the other, through open and hidden tiles, until something
+// stops it (see fling). Returns whether anything moved and whether any launch veered.
+let forceVeer = -1, forceKnock = -1;   // ?test=1 only: make launches take dirs[forceVeer], knocks fan(d)[forceKnock]
+function launch(tntAt, ks, now) {
+  G.bolts = [];
+  let t = now, veered = false;
+  for (const k of ks) {
+    const m = G.mons[k];
+    if (G.over || m.dead || tileDist(tntAt, m.i) !== 1) continue;   // something earlier in this blast moved it
+    const dirs = launchDirs(tntAt, m.i), r = rng();
+    const veer = forceVeer >= 0 ? forceVeer : r < 1 - 2 * VEER ? 0 : r < 1 - VEER ? 1 : 2;
+    if (veer) veered = true;
+    t = fling(k, dirs[veer], t, { tnt: tntAt, veer, by: -1 });
+  }
+  forceVeer = forceKnock = -1;
+  const moved = G.bolts.some(b => b.path.length), id = G.id;
+  G.boltsEnd = t;
+  recompute(true, t);              // the numbers change as things land: moved monsters, gone pumpkins
+  if (moved) Snd.bolt();
+  if (G.over) return { moved, veered };
+  G.holdUntil = Math.max(G.holdUntil, t + EYES_MS);
+  const flew = [...G.bolts].reverse().find(b => b.path.length && !G.mons[b.mon].dead);
+  setTimeout(() => {
+    if (G.id !== id || G.over) return;
+    if (flew) followMonster(flew.mon);
+    if (G.mons.some(m => !m.dead && G.revealed[m.i])) surfaced();
+  }, t - now);
+  return { moved, veered };
+}
+
+// Monster k flies in direction d from its tile, starting at time t0 (the state changes now, the streak plays later).
+// It stops at the board edge or a flag on a safe tile. A pumpkin (flagged or not) blows it up (see kill). Running
+// into another monster stops it there and knocks that one flying, like a bowling pin: 45° off to one side or the
+// other. Returns when everything it set moving has come to rest.
+function fling(k, d, t0, why, depth = 0) {
+  const m = G.mons[k], W = G.W, from = m.i, [dx, dy] = d, path = [];
+  let x = from % W, y = (from / W) | 0, hit = -1, knock = -1;
+  for (;;) {
+    x += dx; y += dy;
+    if (x < 0 || y < 0 || x >= W || y >= G.H) break;
+    const j = y * W + x;
+    if (G.mines[j]) { hit = j; path.push(j); break; }
+    if (G.flagged[j]) break;
+    if ((knock = monAt(j)) >= 0) break;
+    path.push(j);
+  }
+  const dur = path.length * BOLT_STEP_MS, end = t0 + dur;
+  G.bolts.push({ mon: k, from, path, hit, t0, dur, by: why.by });
+  if (TEST) G.log.push({ kind: why.by >= 0 ? 'knock' : 'bolt', mon: k, by: why.by, from, tnt: why.tnt, path: path.slice(), dir: [dx, dy], veer: why.veer, hit });
+  m.eyes = -1;
+  if (path.length) {
+    // scratches appear as the streak passes each tile
+    const passed = [from, ...path.slice(0, -1)];
+    m.trail = passed.map((i, n) => ({ i, t: t0 + n * BOLT_STEP_MS })).reverse().slice(0, TRAIL_LEN);
+    m.i = path[path.length - 1];
+    m.arrivedT = end;
+  }
+  if (hit >= 0) { kill(k, end, why.by >= 0); return end; }
+  if (path.length && !G.revealed[m.i]) m.eyes = end;   // dazed: it shows where it landed
+  if (knock < 0) return end;
+  if (depth >= KNOCK_CHAIN_MAX) { if (TEST) G.log[G.log.length - 1].capped = true; return end; }   // a pile-up stops here
+  const r = rng(), side = forceKnock >= 0 ? forceKnock : r < 0.5 ? 1 : 2;
+  return fling(knock, fan(d)[side], end, { tnt: why.tnt, veer: side, by: k }, depth + 1);
+}
+
+// Monster k, blown up on the pumpkin under it when its streak gets there (at): the pumpkin goes too, leaving a
+// crater of open ground, so the numbers around it drop. Blowing up the last one wins the game.
+function kill(k, at, knocked) {
+  const m = G.mons[k], p = m.i, now = performance.now(), id = G.id;
+  m.dead = true; m.diedT = at;
+  G.kills++;
+  G.mines[p] = 0; G.M--;
+  const flagged = !!G.flagged[p];
+  if (flagged) { G.flagged[p] = 0; G.flags--; }
+  G.revealed[p] = 1; G.revealedCount++;
+  G.nums[p] = countAt(p); G.flickT[p] = 0;
+  G.craters.push({ i: p, t: at, flagged });
+  if (!liveCount()) { G.explodedIdx = p; win('blast', at - now); return; }
+  const nth = G.kills, left = liveCount();   // counted now: one throw can blow up several, and each lands in turn
+  setTimeout(() => {
+    if (G.id !== id || mode !== 'play' || (G.over && !G.won)) return;
+    Snd.boom();
+    buzz([60, 40, 120]);
+    kick();
+    burst(p, 40, ['#ff8a1f', '#ffc266', '#ffe066', '#c6ff4a', '#ffffff'], 1.7);
+    dirty = true;
+    if (G.over) return;                       // the same throw also won: the end has its own celebration
+    G.hintHoldUntil = performance.now() + 2200;
+    flashHint((knocked ? 'STRIKE!' : 'KABOOM!') + ' ' + word(nth).toUpperCase() + ' DOWN,\n' + word(left).toUpperCase() + ' TO GO', 2200);
+    updateHUD();
+  }, at - now);
+}
+
+function win(kind, delay = 0) {
+  G.over = true; G.won = true; G.blasted = kind === 'blast'; G.running = false;
+  G.lungeLeft = 0; clearTimeout(G.lungeTimer);
+  G.overT = performance.now() + delay;
+  for (const m of G.mons) m.eyes = -1;
+  cancelPress();
+  setTntMode(false);
+  const secs = Math.floor(G.elapsed / 1000);
+  const prev = bestOf(kind, G.diff);
+  if (prev === null || secs < prev) { store.set(bestKey(kind, G.diff), secs); G.newBest = true; }
+  const id = G.id;
+  const celebrate = () => {
+    if (G.id !== id || mode !== 'play') return;
+    if (G.blasted) {
+      Snd.boom();
+      buzz([60, 40, 200]);
+      kick();
+      burst(G.explodedIdx, 46, ['#ff8a1f', '#ffc266', '#ffe066', '#c6ff4a', '#ff8fd0', '#ffffff'], 1.9);
+      setTimeout(() => { if (G.id === id && mode !== 'title') Snd.win(); }, 450);
+    } else Snd.win();
+    for (let k = 0; k < 5; k++) burst(rint(G.N), 14, ['#ff8a1f', '#ffc266', '#c6ff4a', '#c48bff', '#ffffff'], 1.2);
+    dirty = true;
+  };
+  if (delay) setTimeout(celebrate, delay); else celebrate();
+  setTimeout(() => { if (G.id === id && mode === 'play') showEnd(); }, delay + (G.blasted ? 1500 : 1000));
+  updateHUD();
+  dirty = true;
+}
+
+function lose(kind, i) {
+  G.over = true; G.lostBy = kind; G.explodedIdx = i; G.running = false;
+  G.lungeLeft = 0; clearTimeout(G.lungeTimer);
+  for (const m of G.mons) m.eyes = -1;
+  cancelPress();
+  setTntMode(false);
+  const now = performance.now(), id = G.id;
+  // Reveal the pumpkins in a ripple out from the fatal tile.
+  G.delay = new Float32Array(G.N);
+  const ex = i % G.W, ey = (i / G.W) | 0;
+  let max = 0;
+  for (let j = 0; j < G.N; j++) {
+    const d = 120 + Math.max(Math.abs(j % G.W - ex), Math.abs(((j / G.W) | 0) - ey)) * 70;
+    G.delay[j] = d;
+    if (G.mines[j] && d > max) max = d;
+  }
+  G.monDelay = max + 250;
+  if (kind !== 'mine') {
+    G.overT = now + SCARE_MS;
+    jumpScare(() => { if (G.id === id && mode === 'play') showEnd(); });
+  } else {
+    G.overT = now;
+    Snd.boom();
+    buzz(140);
+    kick();
+    burst(i, 32, ['#ff8a1f', '#ffc266', '#ff3344', '#ffe066'], 1.5);
+    setTimeout(() => { if (G.id === id && mode === 'play') showEnd(); }, 1300);
+  }
+  updateHUD();
+  dirty = true;
+}
+
+function rankFor() {
+  const secs = Math.floor(G.elapsed / 1000), two = G.mons.length > 1;
+  if (!G.won) {
+    return G.lostBy === 'mine'
+      ? ['SMASHED PUMPKIN', 'Wrong tile. Very wrong tile.']
+      : ['MIDNIGHT SNACK', two ? "They've been waiting for someone like you." : "It's been waiting for someone like you."];
+  }
+  const fast = secs <= DIFFS[G.diff].par, tidy = G.tntUsed <= G.mons.length;   // a stick per monster, or better
+  if (G.blasted && tidy && fast) return ['GHOST WHISPERER', two ? 'They came when you called. Then they went boom.' : 'It came when you called. Then it went boom.'];
+  if (G.blasted && tidy) return ['PUMPKIN SNIPER', two ? 'A stick apiece. Very tidy.' : 'One stick, one shot. Very tidy.'];
+  if (G.blasted) return ['DEMOLITION GHOUL', 'Took a few sticks. Worth every one.'];
+  const left = G.mons.length - G.kills;
+  const still = G.kills ? (G.mons.length === 2 ? "One down. The other one's still hungry." : left === 1 ? "Only one left, and it's still hungry."
+      : word(G.kills)[0].toUpperCase() + word(G.kills).slice(1) + ' down. ' + word(left)[0].toUpperCase() + word(left).slice(1) + ' still hungry.')
+    : two ? "Fast feet. They're still down there, though..." : "Fast feet. It's still down there, though...";
+  if (fast) return ['CANDY CORN SPRINTER', still];
+  return ['SNACK (UNEATEN)', G.kills ? still : two ? "You made it out. They're still hungry." : "You made it out. It's still hungry."];
+}
+
+// ======================================================================
+// Effects
+// ======================================================================
+function tremble() {
+  if (!shakeEl.classList.contains('kick')) {      // a TNT kick already shakes harder; keep it
+    shakeEl.classList.remove('tremble');
+    void shakeEl.offsetWidth;
+    shakeEl.classList.add('tremble');
+  }
+  Snd.heartbeat();
+  buzz(12);
+}
+function kick() {
+  shakeEl.classList.remove('tremble', 'kick');
+  void shakeEl.offsetWidth;
+  shakeEl.classList.add('kick');
+}
+shakeEl.addEventListener('animationend', () => shakeEl.classList.remove('tremble', 'kick'));
+
+function burst(i, n, colors, power) {
+  if (!S || !G) return;
+  const T = S.T, cx = (i % G.W + 0.5) * T, cy = (((i / G.W) | 0) + 0.5) * T, sp = T / 40;
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * Math.PI * 2, v = (0.12 + Math.random() * 0.3) * power * sp;
+    parts.push({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 0.2 * sp, g: 0.0016 * sp,
+      life: 0, max: 500 + Math.random() * 600, c: colors[k % colors.length], s: Math.max(2, Math.round(T / ART * (1 + Math.random()))) });
+  }
+  dirty = true;
+}
+
+function jumpScare(done) {
+  Snd.sting();
+  buzz([90, 40, 160]);
+  if (!FACE) FACE = buildFace();
+  const dpr = DPR();
+  let w = 0, h = 0;
+  fx.style.display = 'block';
+  const c = fx.getContext('2d');
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  app.classList.add('bigshake');
+  const t0 = performance.now();
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    fx.style.display = 'none';
+    app.classList.remove('bigshake');
+    done();
+  };
+  const step = now => {
+    if (finished) return;
+    const t = clamp((now - t0) / SCARE_MS, 0, 1);
+    if (w !== window.innerWidth || h !== window.innerHeight) {
+      w = window.innerWidth; h = window.innerHeight;
+      fx.width = Math.round(w * dpr); fx.height = Math.round(h * dpr);
+    }
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.imageSmoothingEnabled = false;
+    c.globalAlpha = 1;
+    c.fillStyle = t < 0.06 ? '#ffffff' : '#07020a';
+    c.fillRect(0, 0, fx.width, fx.height);
+    const target = Math.max(w * 1.05, h * 0.72) * dpr;
+    const fw = target * (0.25 + 0.85 * easeOutBack(Math.min(1, t / 0.3))) * (1 + 0.04 * Math.sin(now / 30));
+    const fh = fw * FACE.height / FACE.width;
+    const amp = (reduce ? 4 : 26) * dpr * (1 - t * 0.7);
+    const fxX = (fx.width - fw) / 2 + (Math.random() * 2 - 1) * amp;
+    const fxY = (fx.height - fh) / 2 + (Math.random() * 2 - 1) * amp;
+    c.drawImage(FACE, Math.round(fxX), Math.round(fxY), Math.round(fw), Math.round(fh));
+    // eye glow
+    c.globalCompositeOperation = 'lighter';
+    for (const [ex, ey] of [[14.5, 14.5], [33, 15]]) {
+      const gx = fxX + (ex + 0.5) / 48 * fw, gy = fxY + (ey + 0.5) / 40 * fh, r = fw * 0.16;
+      const gr = c.createRadialGradient(gx, gy, 0, gx, gy, r);
+      gr.addColorStop(0, 'rgba(198,255,74,.35)'); gr.addColorStop(1, 'rgba(198,255,74,0)');
+      c.fillStyle = gr; c.fillRect(gx - r, gy - r, r * 2, r * 2);
+    }
+    c.globalCompositeOperation = 'source-over';
+    // pulsing red vignette
+    const cx = fx.width / 2, cy = fx.height / 2, R = Math.hypot(cx, cy);
+    const vg = c.createRadialGradient(cx, cy, R * 0.35, cx, cy, R);
+    vg.addColorStop(0, 'rgba(255,0,40,0)');
+    vg.addColorStop(1, 'rgba(255,0,40,' + (0.35 + 0.25 * Math.sin(now / 40)).toFixed(3) + ')');
+    c.fillStyle = vg; c.fillRect(0, 0, fx.width, fx.height);
+    if (t < 1) requestAnimationFrame(step); else finish();
+  };
+  requestAnimationFrame(step);
+  setTimeout(finish, SCARE_MS + 600);   // in case rAF is throttled (background tab)
+}
+
+// ======================================================================
+// Layout (fits the board, keeps tiles >= MIN_TILE css px, pans when it can't fit)
+// ======================================================================
+const view = { panX: 0, panY: 0, minX: 0, maxX: 0, minY: 0, maxY: 0, canPanX: false, canPanY: false, cssTile: 0, dpr: 1 };
+
+function layout(resetPan) {
+  if (!G) return;
+  const r = wrap.getBoundingClientRect();
+  if (r.width < 20 || r.height < 20) return;
+  const dpr = DPR(), pad = 8;
+  let tile = Math.floor(Math.min((r.width - pad * 2) / G.W, (r.height - pad * 2) / G.H));
+  tile = clamp(tile, MIN_TILE, MAX_TILE);
+  const T = Math.max(ART, Math.ceil(MIN_TILE * dpr - 1e-6), Math.floor(tile * dpr));
+  if (!S || S.T !== T) buildSprites(T);
+  const bw = G.W * T, bh = G.H * T;
+  if (board.width !== bw) board.width = bw;
+  if (board.height !== bh) board.height = bh;
+  const cw = bw / dpr, ch = bh / dpr;
+  board.style.width = cw + 'px';
+  board.style.height = ch + 'px';
+  view.cssTile = T / dpr;
+  view.dpr = dpr;
+  document.getElementById('hud').style.maxWidth = Math.max(580, Math.min(cw, r.width) + 12) + 'px';
+  const fitX = cw <= r.width - pad * 2 + 0.5, fitY = ch <= r.height - pad * 2 + 0.5;
+  const wasX = view.canPanX, wasY = view.canPanY;
+  view.canPanX = !fitX; view.canPanY = !fitY;
+  if (fitX) view.minX = view.maxX = Math.round((r.width - cw) / 2);
+  else { view.minX = Math.floor(r.width - pad - cw); view.maxX = pad; }
+  if (fitY) view.minY = view.maxY = Math.round((r.height - ch) / 2);
+  else { view.minY = Math.floor(r.height - pad - ch); view.maxY = pad; }
+  const cx = Math.round((view.minX + view.maxX) / 2), cy = Math.round((view.minY + view.maxY) / 2);
+  setPan(resetPan || !wasX ? cx : view.panX, resetPan || !wasY ? cy : view.panY);
+  dirty = true;
+}
+function setPan(x, y) {
+  view.panX = Math.round(clamp(x, view.minX, view.maxX));
+  view.panY = Math.round(clamp(y, view.minY, view.maxY));
+  board.style.transform = 'translate(' + view.panX + 'px,' + view.panY + 'px)';
+  const cw = board.width / view.dpr, ch = board.height / view.dpr;
+  edges.l.classList.toggle('on', view.canPanX && view.panX < -2);
+  edges.r.classList.toggle('on', view.canPanX && view.panX + cw > wrap.clientWidth + 2);
+  edges.t.classList.toggle('on', view.canPanY && view.panY < -2);
+  edges.b.classList.toggle('on', view.canPanY && view.panY + ch > wrap.clientHeight + 2);
+}
+// On a board wider than the screen, slide it so monster k's tile is fully in view.
+function followMonster(k) {
+  const m = G && G.mons[k];
+  if (!m || m.dead || (!view.canPanX && !view.canPanY)) return;
+  const t = view.cssTile, x = (m.i % G.W) * t + view.panX, y = ((m.i / G.W) | 0) * t + view.panY, pad = 8;
+  let px = view.panX, py = view.panY;
+  if (x < pad) px += pad - x; else if (x + t > wrap.clientWidth - pad) px -= x + t - (wrap.clientWidth - pad);
+  if (y < pad) py += pad - y; else if (y + t > wrap.clientHeight - pad) py -= y + t - (wrap.clientHeight - pad);
+  if (px !== view.panX || py !== view.panY) setPan(px, py);
+}
+
+function tileAt(cx, cy) {
+  const r = board.getBoundingClientRect();
+  if (!r.width || !r.height) return -1;
+  const x = Math.floor((cx - r.left) / r.width * G.W), y = Math.floor((cy - r.top) / r.height * G.H);
+  if (x < 0 || y < 0 || x >= G.W || y >= G.H) return -1;
+  return y * G.W + x;
+}
+
+// ======================================================================
+// Rendering
+// ======================================================================
+let lastRender = 0;
+function hashVariant(i) { return ((i * 2654435761) >>> 0) % 3; }
+
+function drawScaled(img, x, y, s) {
+  const T = S.T, size = img.width * s, cx = x + T / 2, cy = y + T / 2;
+  bctx.drawImage(img, Math.round(cx - size / 2), Math.round(cy - size / 2), Math.round(size), Math.round(size));
+}
+function drawPop(img, x, y, p) {
+  const T = S.T;
+  if (p <= 0) return;
+  if (p >= 1) { bctx.drawImage(img, x, y); return; }
+  const s = Math.max(0.05, easeOutBack(clamp(p, 0, 1)));
+  const sz = Math.round(T * s);
+  bctx.drawImage(img, Math.round(x + (T - sz) / 2), Math.round(y + (T - sz) / 2), sz, sz);
+}
+
+// Hidden tiles once the game is over: pumpkins ripple in on a loss, get auto-flagged on a win.
+function drawHiddenOver(i, x, y, tx, ty, now) {
+  const since = now - G.overT, isMine = G.mines[i], isMon = monAt(i) >= 0;
+  const unrev = S.unrev[hashVariant(i)];
+  if (G.won && since < 0) { bctx.drawImage(unrev, x, y); if (G.flagged[i]) bctx.drawImage(S.flag, x, y); return; }
+  if (i === G.explodedIdx) {
+    if (since < 0) { bctx.drawImage(unrev, x, y); if (G.flagged[i]) bctx.drawImage(S.flag, x, y); return; }   // not reached yet
+    bctx.drawImage(S.boom, x, y);
+    bctx.drawImage(G.blasted ? S.pumpkin : isMon ? S.monster : S.pumpkin, x, y);
+    return;
+  }
+  if (G.won) {
+    if (isMon) { bctx.drawImage(S.rev[(tx + ty) & 1], x, y); drawPop(S.monster, x, y, (since - 300) / 220); return; }
+    bctx.drawImage(unrev, x, y);
+    if (isMine) {
+      if (G.flagged[i]) bctx.drawImage(S.flag, x, y);
+      else drawPop(S.flag, x, y, (since - ((tx + ty) * 25)) / 160);   // auto-flag the remaining pumpkins
+    } else if (G.flagged[i]) bctx.drawImage(S.flag, x, y);           // flags used as walls stay
+    return;
+  }
+  if (isMine && !G.flagged[i]) {
+    if (since >= G.delay[i]) { bctx.drawImage(S.rev[(tx + ty) & 1], x, y); drawPop(S.pumpkin, x, y, (since - G.delay[i]) / 150); }
+    else bctx.drawImage(unrev, x, y);
+    return;
+  }
+  if (isMon) {
+    if (since >= G.monDelay) { bctx.drawImage(S.rev[(tx + ty) & 1], x, y); drawPop(S.monster, x, y, (since - G.monDelay) / 200); }
+    else bctx.drawImage(unrev, x, y);
+    return;
+  }
+  bctx.drawImage(unrev, x, y);
+  if (G.flagged[i]) bctx.drawImage(isMine ? S.flag : S.wrong, x, y);
+}
+
+function boltActive(now) { return now < G.boltsEnd; }
+// The board ignores taps while a launch is in the air or a lunge is playing out.
+function busy(now) { return boltActive(now) || G.lungeLeft > 0; }
+
+// Where monster k shows at time now, while a launch may still be playing out (G.bolts are in time order):
+// { tile } at rest (-1 once it has been blown up), or { bolt } mid-flight.
+function monView(k, now) {
+  const m = G.mons[k];
+  for (const b of G.bolts) {
+    if (b.mon !== k || now >= b.t0 + b.dur) continue;
+    return now < b.t0 ? { tile: b.from } : { bolt: b };
+  }
+  return { tile: m.dead ? -1 : m.i };
+}
+const craterAt = i => { for (const c of G.craters) if (c.i === i) return c; return null; };
+
+// The monsters a throw at tile a would launch that the player can see (their mound shows): only those get a
+// preview, so aiming can't find one under hidden tiles.
+function aimMons(a) {
+  const out = [];
+  G.mons.forEach((m, k) => { if (!m.dead && G.revealed[m.i] && tileDist(a, m.i) === 1) out.push(k); });
+  return out;
+}
+// While TNT is armed: the open tile being aimed at (held down, or under the mouse) if a throw there would launch a
+// monster the player can see. (Not while a held-back step is due: a throw would run that step first.)
+function aimTile() {
+  if (!tntMode || G.over || G.pendingMove || busy(performance.now())) return -1;
+  let a = hover;
+  for (const p of presses.values()) if (!p.moved && !p.longFired) a = p.tile;
+  return a >= 0 && G.revealed[a] && monAt(a) < 0 && aimMons(a).length ? a : -1;
+}
+// The three ways a throw at a could send monster k, as far as the player can know (see trace). A path that runs into
+// another monster carries that one's two possible knock paths in r.knock.
+function aimRays(a, k = G.mons.findIndex(m => !m.dead && tileDist(a, m.i) === 1)) {
+  const from = G.mons[k].i;
+  return launchDirs(a, from).map(d => {
+    const r = trace(from, d, k);
+    if (r.mon >= 0) r.knock = fan(d).slice(1).map(d2 => trace(G.mons[r.mon].i, d2, r.mon));
+    return r;
+  });
+}
+// The tiles monster self would cross from tile `from` in direction d, until a flag, the board edge or another monster
+// the player can see (r.mon). Hidden pumpkins and hidden monsters can stop it sooner; showing them would give them away.
+function trace(from, d, self) {
+  const W = G.W, [dx, dy] = d, tiles = [];
+  let x = from % W, y = (from / W) | 0, flag = -1, mon = -1;
+  for (;;) {
+    x += dx; y += dy;
+    if (x < 0 || y < 0 || x >= W || y >= G.H) break;
+    const j = y * W + x, o = monAt(j);
+    if (G.flagged[j]) { flag = j; break; }
+    if (o >= 0 && o !== self && G.revealed[j]) { mon = o; break; }
+    tiles.push(j);
+  }
+  return { dir: [dx, dy], tiles, flag, mon };
+}
+// Pulses while aiming: a target on a flag, or a ring on a monster that would get knocked.
+const aimPulses = a => aimMons(a).some(k => aimRays(a, k).some(r => r.flag >= 0 || r.mon >= 0));
+function drawAim(a, now) {
+  const T = S.T, W = G.W, ctx = bctx;
+  ctx.globalAlpha = 0.75;
+  ctx.drawImage(S.tnt, (a % W) * T, ((a / W) | 0) * T);
+  for (const k of aimMons(a)) aimRays(a, k).forEach((r, n) => {
+    drawRay(G.mons[k].i, r, n ? 1 : 0, now);
+    if (r.mon >= 0) for (const kr of r.knock) drawRay(G.mons[r.mon].i, kr, 2, now);
+  });
+  ctx.globalAlpha = 1;
+}
+// One path from tile m: its tiles tinted, and a line to where it would stop with a mark there: a landing square at the
+// board edge, a pulsing green target on a flag (if that flag is on a pumpkin, KABOOM), a pulsing white ring on a
+// monster it would knock flying, or an X on the side of its tile when it can't move at all. w: 0 = the likely straight
+// launch (boldest), 1 = a veer, 2 = where a knocked monster could fly (dashed).
+function drawRay(m, r, w, now) {
+  const T = S.T, W = G.W, ctx = bctx, n = r.tiles.length;
+  const cx = i => ((i % W) + 0.5) * T, cy = i => (((i / W) | 0) + 0.5) * T;
+  const stop = r.flag >= 0 ? r.flag : r.mon >= 0 ? G.mons[r.mon].i : -1;
+  const ink = (lw, draw) => {      // a dark outline under the orange, so it reads on any tile
+    ctx.lineCap = 'square';
+    ctx.strokeStyle = 'rgba(26,10,36,.8)'; ctx.lineWidth = lw + 2 * Math.max(1, Math.round(T * 0.025)); draw(); ctx.stroke();
+    ctx.strokeStyle = '#ffb347'; ctx.lineWidth = lw; draw(); ctx.stroke();
+  };
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = ['rgba(255,138,31,.25)', 'rgba(255,138,31,.15)', 'rgba(255,138,31,.1)'][w];
+  for (const j of r.tiles) ctx.fillRect((j % W) * T, ((j / W) | 0) * T, T, T);
+  ctx.globalAlpha = [1, 0.8, 0.7][w];
+  if (n) {
+    // from the edge of its tile to the middle of the last tile, or to the edge of whatever stops it
+    const x0 = (cx(m) + cx(r.tiles[0])) / 2, y0 = (cy(m) + cy(r.tiles[0])) / 2, l = r.tiles[n - 1];
+    const x1 = stop >= 0 ? (cx(l) + cx(stop)) / 2 : cx(l), y1 = stop >= 0 ? (cy(l) + cy(stop)) / 2 : cy(l);
+    if (w === 2) ctx.setLineDash([Math.round(T * 0.14), Math.round(T * 0.1)]);
+    ink(Math.max(2, Math.round(T * [0.065, 0.045, 0.04][w])), () => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
+    ctx.setLineDash([]);
+    if (stop < 0) {
+      const q = Math.max(4, Math.round(T * [0.22, 0.16, 0.14][w]));
+      ctx.fillStyle = 'rgba(26,10,36,.8)';
+      ctx.fillRect(Math.round(x1 - q / 2) - 1, Math.round(y1 - q / 2) - 1, q + 2, q + 2);
+      ctx.fillStyle = '#ffb347';
+      ctx.fillRect(Math.round(x1 - q / 2), Math.round(y1 - q / 2), q, q);
+    }
+  } else if (stop < 0) {
+    // nowhere to fly this way (the board edge): an X on the side of its tile, it would stay put
+    const q = Math.max(3, Math.round(T * 0.09)), x = cx(m) + r.dir[0] * T * 0.34, y = cy(m) + r.dir[1] * T * 0.34;
+    ink(Math.max(2, Math.round(T * 0.05)), () => { ctx.beginPath(); ctx.moveTo(x - q, y - q); ctx.lineTo(x + q, y + q); ctx.moveTo(x + q, y - q); ctx.lineTo(x - q, y + q); });
+  }
+  if (stop >= 0) {
+    const lw = Math.max(2, Math.round(T * 0.08)), inset = Math.round(T * (0.07 + 0.05 * (0.5 + 0.5 * Math.sin(now / 130))));
+    ctx.strokeStyle = r.flag >= 0 ? '#c6ff4a' : '#f1e8ff';
+    ctx.lineWidth = lw;
+    ctx.strokeRect((stop % W) * T + inset + lw / 2, ((stop / W) | 0) * T + inset + lw / 2, T - 2 * inset - lw, T - 2 * inset - lw);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// A launch: the monster streaks along bolt b's path, leaving a dust trail.
+function drawBolt(b, now) {
+  const T = S.T, W = G.W, pts = [b.from, ...b.path];
+  const k = Math.max(0, now - b.t0) / BOLT_STEP_MS, a = Math.min(pts.length - 1, Math.floor(k)), f = k - a;
+  const p0 = pts[a], p1 = pts[Math.min(pts.length - 1, a + 1)];
+  for (let q = 0; q <= a; q++) {
+    const c = pts[q];
+    bctx.fillStyle = 'rgba(165,143,200,' + (0.35 * (q + 1) / (a + 1)).toFixed(3) + ')';
+    bctx.fillRect((c % W) * T + T * 0.25, ((c / W) | 0) * T + T * 0.25, T * 0.5, T * 0.5);
+  }
+  const x = ((p0 % W) + ((p1 % W) - (p0 % W)) * f) * T, y = (((p0 / W) | 0) + (((p1 / W) | 0) - ((p0 / W) | 0)) * f) * T;
+  bctx.drawImage(S.monster, Math.round(x), Math.round(y));
+}
+
+function drawFlicker(i, now) {
+  const T = S.T, x = (i % G.W) * T, y = ((i / G.W) | 0) * T;
+  const el = Math.max(0, now - G.flickT[i]), t = el / FLICKER_MS;
+  const from = G.flickFrom[i], to = G.nums[i];
+  bctx.fillStyle = 'rgba(255,30,60,' + (0.3 * (1 - t)).toFixed(3) + ')';
+  bctx.fillRect(x, y, T, T);
+  const unit = T / ART;
+  if (t < 0.72) {
+    const frame = Math.floor(el / 75), show = frame % 2 ? to : from;
+    if (show > 0) {
+      const jx = ((frame % 3) - 1) * unit, jy = (((frame >> 1) % 3) - 1) * unit * 0.5;
+      drawScaled(S.digitRed[show], x + jx, y + jy, FLICKER_SCALE * (1 + 0.06 * Math.sin(el / 28)));
+    }
+  } else if (to > 0) {
+    const s = (t - 0.72) / 0.28;
+    bctx.drawImage(S.digit[to], x, y);
+    bctx.globalAlpha = 1 - s;
+    drawScaled(S.digitRed[to], x, y, FLICKER_SCALE * (1 + 0.12 * (1 - s)) + (1 - FLICKER_SCALE) * s);
+    bctx.globalAlpha = 1;
+  }
+}
+
+function isPressed(i) {
+  for (const p of presses.values()) if (p.tile === i && !p.longFired && !p.moved) return true;
+  return false;
+}
+
+function render(now) {
+  const T = S.T, W = G.W, pad = S.pad, ctx = bctx;
+  const dt = Math.min(50, Math.max(0, now - lastRender));
+  lastRender = now;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, board.width, board.height);
+  // where each monster shows right now (a launch can still be playing out), and the open tiles their mounds cover
+  const views = G.mons.map((m, k) => monView(k, now)), mounds = new Set();
+  for (const v of views) if (v.tile >= 0 && G.revealed[v.tile]) mounds.add(v.tile);
+
+  // 1) tiles
+  for (let i = 0; i < G.N; i++) {
+    const tx = i % W, ty = (i / W) | 0, x = tx * T, y = ty * T;
+    if (G.revealed[i]) {
+      if (G.over && i === G.explodedIdx && !G.won && now >= G.overT) { ctx.drawImage(S.boom, x, y); ctx.drawImage(S.monster, x, y); continue; }
+      const c = G.craters.length ? craterAt(i) : null;
+      if (c && now < c.t) {                     // a pumpkin about to be blown up still looks like one
+        ctx.drawImage(S.unrev[hashVariant(i)], x, y);
+        if (c.flagged) ctx.drawImage(S.flag, x, y);
+        continue;
+      }
+      ctx.drawImage(S.rev[(tx + ty) & 1], x, y);
+      if (c) ctx.drawImage(now - c.t < 300 ? S.boom : S.crater, x, y);
+      if (mounds.has(i)) continue;                                    // a mound (or a monster popping up) covers this tile
+      const n = now < G.flickT[i] ? G.flickFrom[i] : G.nums[i];        // a launch's numbers change when it lands
+      if (n > 0 && !(G.flickT[i] && now >= G.flickT[i] && now - G.flickT[i] < FLICKER_MS)) ctx.drawImage(S.digit[n], x, y);
+      continue;
+    }
+    if (G.over) { drawHiddenOver(i, x, y, tx, ty, now); continue; }
+    const pressed = !G.flagged[i] && isPressed(i);
+    ctx.drawImage(pressed ? S.unrevPress : S.unrev[hashVariant(i)], x, y);
+  }
+
+  // 2) scratch marks on the last few tiles each monster crawled through (clipped to their tile)
+  if (!G.over) for (const m of G.mons) for (let k = 0; k < m.trail.length; k++) {
+    const e = m.trail[k];
+    if (G.revealed[e.i] || now < e.t) continue;
+    const a = [0.9, 0.6, 0.35][k] * (1 - (now - e.t) / SCRATCH_FADE_MS);
+    if (a <= 0.01) continue;
+    const x = (e.i % W) * T, y = ((e.i / W) | 0) * T;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y, T, T); ctx.clip();
+    ctx.globalAlpha = Math.min(1, a);
+    ctx.drawImage(S.scratch, x - pad, y - pad);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // 3) flags (above the scratches)
+  if (!G.over) {
+    for (let i = 0; i < G.N; i++) if (!G.revealed[i] && G.flagged[i]) ctx.drawImage(S.flag, (i % W) * T, ((i / W) | 0) * T);
+  }
+
+  // 4) flickering numbers
+  if (now < G.flickUntil + 32) {
+    for (let i = 0; i < G.N; i++) {
+      if (!G.revealed[i] || !G.flickT[i] || now < G.flickT[i] || now - G.flickT[i] >= FLICKER_MS) continue;
+      if (mounds.has(i)) continue;
+      drawFlicker(i, now);
+    }
+  }
+
+  // 4b) out in the open the ground bulges where one is. Once the end shows, the ones still there pop up: after a
+  // board clear to say goodbye, after a loss with the other pumpkins. Until then (a launch can still be playing out)
+  // they stay mounds.
+  views.forEach((v, k) => {
+    if (v.tile < 0 || !G.revealed[v.tile] || (G.over && !G.won && v.tile === G.explodedIdx)) return;
+    const i = v.tile, x = (i % W) * T, y = ((i / W) | 0) * T;
+    const bob = Math.round(Math.round(Math.sin(now / 170 + k * 2)) * T / ART);
+    const t = now - G.overT, wait = G.won ? 300 : G.monDelay;
+    if (!G.over || t < wait) ctx.drawImage(S.mound, x, y + bob);
+    else drawPop(S.monster, x, y, (t - wait) / (G.won ? 220 : 200));
+  });
+
+  // 4c) a TNT stick flashes where it went off; launched monsters streak across the board
+  if (G.tntFx && now - G.tntFx.t0 < 220) drawPop(S.tnt, (G.tntFx.i % W) * T, ((G.tntFx.i / W) | 0) * T, 1 - (now - G.tntFx.t0) / 220);
+  for (const v of views) if (v.bolt) drawBolt(v.bolt, now);
+
+  // 5) glowing eyes (about 1 in 4 moves, and where it lands after a launch, while it is under hidden tiles)
+  if (!G.over) G.mons.forEach((m, k) => {
+    if (m.eyes < 0 || views[k].tile !== m.i || G.revealed[m.i]) return;
+    const t = (now - m.eyes) / EYES_MS;
+    if (t < 0) return;                                  // still in flight
+    if (t >= 1) { m.eyes = -1; return; }
+    if (t > 0.55 && t < 0.62) return;                   // blink
+    ctx.globalAlpha = clamp(Math.sin(Math.PI * t) * 1.6, 0, 1);
+    ctx.drawImage(S.eyes, (m.i % W) * T - pad, ((m.i / W) | 0) * T - pad);
+    ctx.globalAlpha = 1;
+  });
+
+  // 5b) TNT aim: where a throw here could send them
+  const aim = aimTile();
+  if (aim >= 0) drawAim(aim, now);
+
+  // 6) long-press progress ring
+  for (const p of presses.values()) {
+    if (p.longFired || p.moved || p.tile < 0 || G.over || G.revealed[p.tile] || tntMode || !G.generated || busy(now)) continue;
+    const t = (now - p.t0) / LONG_PRESS_MS;
+    if (t <= 0.15) continue;
+    const i = p.tile, cx = ((i % W) + 0.5) * T, cy = (((i / W) | 0) + 0.5) * T;
+    ctx.strokeStyle = '#ff8a1f';
+    ctx.lineWidth = Math.max(2, T * 0.09);
+    ctx.beginPath();
+    ctx.arc(cx, cy, T * 0.4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, t));
+    ctx.stroke();
+  }
+
+  // 7) mouse hover
+  if (hover >= 0 && !presses.size && !G.over && (tntMode ? G.revealed[hover] : true)) {
+    ctx.fillStyle = tntMode ? 'rgba(255,51,68,.22)' : 'rgba(255,255,255,.07)';
+    ctx.fillRect((hover % W) * T, ((hover / W) | 0) * T, T, T);
+  }
+
+  // 8) particles
+  for (let k = parts.length - 1; k >= 0; k--) {
+    const p = parts[k];
+    p.life += dt;
+    if (p.life >= p.max) { parts.splice(k, 1); continue; }
+    p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    ctx.globalAlpha = 1 - p.life / p.max;
+    ctx.fillStyle = p.c;
+    ctx.fillRect(Math.round(p.x), Math.round(p.y), p.s, p.s);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function isAnimating(now) {
+  if (presses.size || parts.length) return true;
+  if (!G.over && G.mons.some(m => m.eyes >= 0)) return true;
+  if (now < G.flickUntil + 32) return true;
+  if (boltActive(now) || (G.tntFx && now - G.tntFx.t0 < 260)) return true;
+  if (G.craters.some(c => now < c.t + 350)) return true;
+  const aim = aimTile();
+  if (aim >= 0 && aimPulses(aim)) return true;      // a target on a flag, or a ring on a monster to knock, pulses
+  if (G.over && now - G.overT < 2500) return true;
+  return false;
+}
+function scratchFading(now) {
+  for (const m of G.mons) for (const e of m.trail) if (now - e.t < SCRATCH_FADE_MS) return true;
+  return false;
+}
+
+// ======================================================================
+// HUD + screens
+// ======================================================================
+function updateHUD() {
+  if (!G) return;
+  // a pumpkin a monster hasn't reached yet still counts, with the monster (and its flag): the kill shows when it lands
+  let pending = 0;
+  const now = performance.now();
+  for (const c of G.craters) if (now < c.t - 1) pending += c.flagged ? 1 : 2;   // (its landing timer may fire a hair early)
+  minesEl.textContent = pad3(G.won ? 0 : G.M + (G.generated ? liveCount() : DIFFS[G.diff].mons) - G.flags + pending);
+  timerEl.textContent = pad3(Math.min(999, Math.floor(G.elapsed / 1000)));
+  const left = G.over ? 0 : MOVE_EVERY - G.actions;
+  creepDots.forEach((d, k) => { d.className = k < left ? (left === 1 ? 'on warn' : 'on') : ''; });
+  creepEl.classList.toggle('idle', G.over);
+  creepEl.classList.toggle('warn', !G.over && left === 1);
+  creepLbl.textContent = G.over ? (G.blasted ? 'BOOM' : G.won ? 'HUNGRY' : 'FED') : left === 1 ? 'NEXT!' : 'CREEP';
+  tntLbl.textContent = G.tnt > 0 ? 'TNT ×' + G.tnt : 'NO TNT';
+  tntBtn.disabled = !G.generated || G.tnt <= 0 || G.over;
+  tntBtn.setAttribute('aria-label', (G.tnt > 0 ? 'TNT, ' + G.tnt + ' left' : 'No TNT left') + '. Arm it, then tap open ground next to the monster.');
+}
+
+function hintText() {
+  const mouse = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
+  const tap = mouse ? 'CLICK' : 'TAP';
+  const side = window.matchMedia && matchMedia('(orientation: landscape) and (max-height: 540px)').matches;
+  const sep = side ? '\n' : ' · ';              // the narrow landscape column gets one instruction per line
+  if (tntMode) return tap + ' OPEN GROUND NEXT TO IT\n' + (mouse ? 'POINT AT A TILE TO SEE WHERE IT CAN FLY' : 'HOLD TO AIM · SLIDE OFF TO CANCEL');
+  const first = mouse ? (flagMode ? 'CLICK: FLAG' + sep + 'HOLD: REVEAL' : 'CLICK: REVEAL' + sep + 'RIGHT-CLICK: FLAG')
+    : (flagMode ? 'TAP: FLAG' + sep + 'HOLD: REVEAL' : 'TAP: REVEAL' + sep + 'HOLD: FLAG');
+  return first + '\n' + tap + ' OPEN GROUND: STOMP (LURES IT)';
+}
+let hintTimer = 0;
+function flashHint(text, ms = 1400) {
+  clearTimeout(hintTimer);
+  hintEl.textContent = text;
+  hintEl.classList.add('alert');
+  hintTimer = setTimeout(() => { hintEl.classList.remove('alert'); hintEl.textContent = hintText(); }, ms);
+}
+function resetHint() {
+  clearTimeout(hintTimer);
+  hintEl.classList.remove('alert');
+  hintEl.textContent = hintText();
+}
+function setFlagMode(on) {
+  flagMode = on;
+  if (on && tntMode) setTntMode(false);        // switching to flags puts the TNT away
+  flagBtn.setAttribute('aria-pressed', String(on));
+  flagLbl.textContent = 'FLAG: ' + (on ? 'ON' : 'OFF');
+  resetHint();
+}
+function setTntMode(on) {
+  tntMode = !!on && !!G && G.generated && G.tnt > 0 && !G.over;
+  tntBtn.setAttribute('aria-pressed', String(tntMode));
+  setIcon(tntBtn.querySelector('.icon'), tntMode ? 'tntLit' : 'tnt');
+  board.style.cursor = tntMode ? 'crosshair' : '';
+  resetHint();
+}
+function syncMute() {
+  for (const b of muteBtns) {
+    setIcon(b.querySelector('.icon'), Snd.muted ? 'mute' : 'sound');
+    b.setAttribute('aria-pressed', String(Snd.muted));
+    b.setAttribute('aria-label', Snd.muted ? 'Unmute sound' : 'Mute sound');
+  }
+}
+function setDiff(d) {
+  diff = d;
+  store.set('diff', d);
+  for (const b of titleEl.querySelectorAll('.dbtn')) {
+    b.setAttribute('aria-checked', String(b.dataset.diff === d));
+    b.tabIndex = b.dataset.diff === d ? 0 : -1;    // one Tab stop for the group; arrow keys move within it
+  }
+  const blast = bestOf('blast', d), clear = bestOf('clear', d);
+  $('best').textContent = blast !== null ? 'BEST KABOOM ' + d.toUpperCase() + ': ' + fmtTime(blast)
+    : clear !== null ? 'BEST CLEAR ' + d.toUpperCase() + ': ' + fmtTime(clear) : '';
+}
+
+function startGame(d) {
+  Snd.init();
+  if (d) setDiff(d);
+  newGame(diff);
+  mode = 'play';
+  app.dataset.mode = mode;
+  inputBlockUntil = performance.now() + 350;
+  titleEl.classList.remove('show');
+  endEl.classList.remove('show', 'win', 'lose', 'hidepanel');
+  fx.style.display = 'none';
+  app.classList.remove('bigshake');
+  app.scrollTop = app.scrollLeft = 0;
+  layout(true);
+  drawBg();
+  updateHUD();
+  dirty = true;
+}
+function goMenu() {
+  if (G) {
+    G.running = false;
+    clearTimeout(G.lungeTimer); clearTimeout(G.moveTimer);
+    G.lungeLeft = 0; G.pendingMove = false;
+  }
+  cancelPress();
+  mode = 'title';
+  app.dataset.mode = mode;
+  inputBlockUntil = performance.now() + 350;
+  endEl.classList.remove('show', 'win', 'lose', 'hidepanel');
+  fx.style.display = 'none';
+  app.classList.remove('bigshake');
+  titleEl.classList.add('show');
+  app.scrollTop = app.scrollLeft = 0;
+  setDiff(diff);
+  layoutTitle();
+  drawBg();
+}
+
+function showEnd() {
+  mode = 'end';
+  app.dataset.mode = mode;
+  const secs = Math.floor(G.elapsed / 1000);
+  const [rank, quip] = rankFor();
+  endEl.classList.remove('win', 'lose', 'hidepanel');
+  endEl.classList.add('show', G.won ? 'win' : 'lose');
+  sizeEndTitle();
+  const total = G.mons.length, sticks = G.tntUsed === 1 ? '1 stick' : G.tntUsed + ' sticks';
+  $('endSub').textContent = G.blasted
+    ? (total > 1 ? (total === 2 ? 'Both of them' : 'All ' + word(total) + ' of them') + ', launched into pumpkins with ' + sticks + ' of TNT.'
+      : G.tntUsed === 1 ? 'One stick, one pumpkin, one very surprised monster.' : 'Launched into a pumpkin with ' + sticks + ' of TNT.')
+    : G.won ? (G.kills ? (total - G.kills === 1 ? 'Board cleared, but one got away. ' : 'Board cleared, but ' + word(total - G.kills) + ' got away. ')
+        + (total === 2 ? 'Blow up both for the real win.' : 'Get them all for the real win.')
+      : total > 1 ? 'Board cleared, but they got away. Blow them up for the real win.' : 'Board cleared, but it got away. Blow it up for the real win.')
+    : G.lostBy === 'stomp' ? 'You stomped right on it.'
+    : G.lostBy === 'tnt' ? 'You lit the fuse right on its head.'
+    : G.lostBy === 'monster' ? 'You dug right into it.' : 'A pumpkin mine. Classic.';
+  $('stTime').textContent = fmtTime(secs);
+  $('stMonsterLbl').textContent = total > 1 ? 'MONSTERS' : 'MONSTER';
+  $('stMonster').textContent = G.blasted ? 'BLASTED!' : G.won ? (G.kills ? G.kills + ' OF ' + total + ' BLASTED' : 'GOT AWAY')
+    : G.lostBy === 'mine' ? 'STILL LOOSE' : 'ATE YOU';
+  $('stMonsterBox').classList.toggle('good', G.blasted);
+  $('stRank').textContent = rank;
+  $('endQuip').textContent = quip;
+  const D = DIFFS[G.diff];
+  $('stScoreBox').style.display = G.won ? '' : 'none';
+  $('stBestBox').style.display = G.won ? '' : 'none';
+  if (G.won) {
+    const bonus = BLAST_BONUS * G.kills + (G.blasted ? TNT_LEFT_BONUS * G.tnt : 0);
+    const score = D.base + Math.max(0, D.par * 2 - secs) * 10 + bonus;
+    $('stScore').textContent = score + (bonus ? ' (+' + bonus + ')' : '');
+    const best = bestOf(G.blasted ? 'blast' : 'clear', G.diff);
+    $('stBestLbl').textContent = G.blasted ? 'BEST KABOOM' : 'BEST CLEAR';
+    $('stBest').textContent = (G.newBest ? 'NEW! ' : '') + fmtTime(best !== null && !G.newBest ? best : secs);
+  }
+  $('viewBtn').textContent = 'VIEW BOARD';
+  app.scrollTop = app.scrollLeft = 0;
+  if (lastInputKeyboard) { try { $('againBtn').focus({ preventScroll: true }); } catch (e) { /* old browsers */ } }
+}
+function sizeEndTitle() {
+  const title = G.blasted ? 'KABOOM!' : G.won ? 'YOU SURVIVED!' : G.lostBy === 'mine' ? 'BOOM.' : 'IT GOT YOU.';
+  const cols = title.length * 6 - 1;
+  const avail = Math.min(window.innerWidth - 20, 400) - 40;
+  const scale = clamp(Math.floor(Math.min(avail / cols, window.innerHeight * 0.1 / 8)), 2, 6);
+  pixelText($('endTitle'), title, scale, G.won ? orangeGrad : FLICKER_RED, '#2a0d00');
+  $('endTitle').setAttribute('aria-label', title);
+}
+
+// ======================================================================
+// Input
+// ======================================================================
+const presses = new Map();   // pointerId -> active press on the board
+let hover = -1;
+let inputBlockUntil = 0;     // swallows the second half of a double tap that lands just after a screen change
+
+function cancelPress(id) {
+  if (id === undefined) { for (const p of presses.values()) clearTimeout(p.timer); presses.clear(); }
+  else { const p = presses.get(id); if (!p) return; clearTimeout(p.timer); presses.delete(id); }
+  dirty = true;
+}
+function primary(i, t0) {
+  if (!G.generated) return actReveal(i);   // the first tap always opens the board, whatever mode is on
+  if (settleMove()) return false;
+  // It just moved under this finger (e.g. the 2nd tap of a quick double stomp): don't count that tap.
+  const under = monAt(i);
+  if (G.revealed[i] && under >= 0 && t0 !== undefined && t0 < G.mons[under].arrivedT + ARRIVE_GRACE_MS) { flashHint("IT'S RIGHT UNDER YOU!"); buzz(30); return false; }
+  if (G.revealed[i]) return tntMode ? actTNT(i) : actStomp(i);
+  if (tntMode) { flashHint('TNT GOES ON OPEN GROUND'); return false; }
+  return flagMode ? actFlag(i) : actReveal(i);
+}
+function secondary(i) {
+  if (G.revealed[i] || tntMode) return false;
+  return flagMode ? actReveal(i) : actFlag(i);
+}
+function onLong(p) {
+  if (presses.get(p.id) !== p || p.moved || mode !== 'play' || p.tile < 0 || G.over) return;
+  if (G.revealed[p.tile]) return;              // holding on open ground: the release still stomps / throws
+  if (busy(performance.now())) { p.longFired = true; dirty = true; return; }   // dropped, like a tap mid-lunge
+  p.longFired = true;
+  dirty = true;
+  if (!G.generated) { actReveal(p.tile); return; }   // a slow first press still opens the board
+  if (tntMode) { flashHint('TNT GOES ON OPEN GROUND'); return; }
+  if (secondary(p.tile)) buzz(18);
+}
+
+board.addEventListener('pointerdown', e => {
+  Snd.init();
+  if (mode === 'title' || !G) return;
+  e.preventDefault();
+  const now = performance.now();
+  if (now < inputBlockUntil) return;
+  if (busy(now)) return;                          // let a launch land, or a lunge finish, first
+  const viewOnly = G.over;            // a finished board can still be dragged around, nothing else
+  const i = tileAt(e.clientX, e.clientY);
+  if (e.pointerType === 'mouse' && (e.button === 2 || (e.button === 0 && e.ctrlKey))) {
+    if (i >= 0 && !viewOnly) { if (tntMode && !G.revealed[i]) flashHint('TNT GOES ON OPEN GROUND'); else actFlag(i); }
+    return;
+  }
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  // A finger that was already resting (or dragging) when another one lands is a grip or a pinch, not a tap.
+  // A finger that only just touched down is probably the first half of a two-thumb roll, so it keeps its tap.
+  for (const q of [...presses.values()]) if (q.moved || q.longFired || now - q.t0 > 250) cancelPress(q.id);
+  try { board.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  const p = { id: e.pointerId, tile: i, x0: e.clientX, y0: e.clientY, t0: now,
+    longFired: false, moved: false, pan: false, px0: view.panX, py0: view.panY, timer: 0 };
+  if (!viewOnly) p.timer = setTimeout(() => onLong(p), LONG_PRESS_MS);
+  presses.set(e.pointerId, p);
+  hover = -1;
+  dirty = true;
+});
+board.addEventListener('pointermove', e => {
+  const p = presses.get(e.pointerId);
+  if (!p) {
+    if (e.pointerType === 'mouse' && !presses.size && mode === 'play' && G && !G.over) {
+      const i = tileAt(e.clientX, e.clientY);
+      if (i !== hover) { hover = i; dirty = true; }
+    }
+    return;
+  }
+  const dx = e.clientX - p.x0, dy = e.clientY - p.y0;
+  // Once a press drifts past the tolerance it can never become a tap or a long-press again.
+  if (!p.moved && !p.longFired && Math.hypot(dx, dy) > MOVE_TOL) {
+    p.moved = true;
+    clearTimeout(p.timer);
+    p.pan = presses.size === 1 && (view.canPanX || view.canPanY);
+    dirty = true;
+  }
+  if (p.pan) setPan(p.px0 + dx, p.py0 + dy);
+});
+board.addEventListener('pointerup', e => {
+  const p = presses.get(e.pointerId);
+  if (!p) return;
+  clearTimeout(p.timer);
+  presses.delete(e.pointerId);
+  dirty = true;
+  if (p.longFired || p.moved || mode !== 'play' || G.over) return;
+  if (busy(performance.now())) return;            // a finger lifted mid-launch or mid-lunge does nothing
+  if (Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > MOVE_TOL) return;
+  if (p.tile >= 0) primary(p.tile, p.t0);   // the tile under the finger when it went down
+});
+board.addEventListener('pointercancel', e => cancelPress(e.pointerId));
+board.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && hover !== -1) { hover = -1; dirty = true; } });
+// iOS: stop the long-press magnifier / callout on the board without breaking pointer events.
+board.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+
+// No scrolling, pinch-zoom, double-tap zoom, or context menus anywhere.
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('gesturechange', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('selectstart', e => e.preventDefault());
+document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+
+// Audio may only start after a user gesture.
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(ev, () => Snd.init(), { capture: true, passive: true });
+let lastInputKeyboard = false;
+window.addEventListener('keydown', () => { lastInputKeyboard = true; }, { capture: true, passive: true });
+window.addEventListener('pointerdown', () => { lastInputKeyboard = false; }, { capture: true, passive: true });
+
+titleEl.addEventListener('click', e => {
+  if (mode !== 'title') return;
+  const db = e.target.closest('.dbtn');
+  if (db) { setDiff(db.dataset.diff); return; }
+  if (e.target.closest('.diff') || e.target.closest('#titleMute')) return;   // near-misses on the picker don't start
+  if (performance.now() < inputBlockUntil) return;                           // 2nd tap of a double tap on HOME / MENU
+  startGame();
+});
+$('titleMute').addEventListener('click', () => { Snd.setMuted(!Snd.muted); syncMute(); });
+$('muteBtn').addEventListener('click', () => { Snd.setMuted(!Snd.muted); syncMute(); });
+$('restartBtn').addEventListener('click', () => startGame());
+$('homeBtn').addEventListener('click', goMenu);
+$('againBtn').addEventListener('click', () => startGame());
+$('menuBtn').addEventListener('click', goMenu);
+$('viewBtn').addEventListener('click', () => {
+  const hidden = endEl.classList.toggle('hidepanel');
+  $('viewBtn').textContent = hidden ? 'SHOW RESULTS' : 'VIEW BOARD';
+});
+flagBtn.addEventListener('click', () => setFlagMode(!flagMode));
+tntBtn.addEventListener('click', () => setTntMode(!tntMode));
+
+window.addEventListener('keydown', e => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (mode === 'title') {
+    const dbtn = e.target instanceof Element ? e.target.closest('.dbtn') : null;
+    const step = { arrowleft: -1, arrowup: -1, arrowright: 1, arrowdown: 1 }[k];
+    if (step && dbtn) {
+      e.preventDefault();
+      const all = [...titleEl.querySelectorAll('.dbtn')], next = all[(all.indexOf(dbtn) + step + all.length) % all.length];
+      setDiff(next.dataset.diff);
+      next.focus();
+    }
+    else if (k === 'enter' && dbtn) { e.preventDefault(); startGame(dbtn.dataset.diff); }
+    else if ((k === 'enter' || k === ' ') && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); startGame(); }
+    return;
+  }
+  if (k === 'f') setFlagMode(!flagMode);
+  else if (k === 't') setTntMode(!tntMode);
+  else if (k === 'm') { Snd.setMuted(!Snd.muted); syncMute(); }
+  else if (k === 'r') startGame();
+  else if (k === 'escape') goMenu();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { Snd.suspend(); cancelPress(); }
+  else { Snd.resume(); dirty = true; }
+});
+
+// ======================================================================
+// Title screen
+// ======================================================================
+let mini = null;
+function layoutTitle() {
+  const w = Math.min(window.innerWidth, 520) - 32;
+  const short = window.innerHeight < 600, tiny = window.innerHeight < 420;
+  const s1 = clamp(Math.floor(w / 65), 2, tiny ? 3 : short ? 4 : 6);
+  pixelText($('logo1'), 'MINESWEEPER', s1, orangeGrad, '#3a1500');
+  const s2 = clamp(Math.floor(w / 89), 2, tiny ? 2 : short ? 3 : 4);
+  pixelText($('logo2'), 'SOMETHING MOVES', s2, '#d9c6ff', '#2a1446');
+  const dpr = DPR(), cssT = 34, T = Math.round(cssT * dpr), pad = Math.max(2, Math.round(T * 0.35));
+  if (!mini || mini.T !== T) {
+    const unit = T / ART;
+    const mk = (rows, pal) => { const c = mkCanvas(T, T); drawMap(c.getContext('2d'), rows, pal, 0, 0, unit); return c; };
+    mini = { T, pad, unrev: [0, 1, 2].map(v => mk(unrevMap(v, false), TILE_PAL)), eyes: glowSprite(mk(EYES_MAP, { E: '#eaff8a' }), 'rgba(198,255,74,1)', T * 0.3, pad) };
+  }
+  peek.width = T * 6; peek.height = Math.round(T * 1.6);
+  peek.style.width = peek.width / dpr + 'px'; peek.style.height = peek.height / dpr + 'px';
+  peekKey = '';
+}
+// A row of tiles; every few seconds one lifts and something looks out.
+let peekKey = '';
+function drawPeek(now) {
+  if (!mini || peek.offsetParent === null) return;
+  const c = peekCtx, T = mini.T, top = peek.height - T;
+  const cycle = 2800, k = Math.floor(now / cycle), t = (now % cycle) / cycle, slot = (k * 5 + 2) % 6;
+  let a = 0;
+  if (t > 0.12 && t < 0.26) a = (t - 0.12) / 0.14;
+  else if (t >= 0.26 && t < 0.72) a = 1;
+  else if (t >= 0.72 && t < 0.8) a = 1 - (t - 0.72) / 0.08;
+  const blink = t > 0.5 && t < 0.54, look = Math.round(Math.sin(now / 300) * T * 0.06);
+  const key = a > 0 ? slot + '|' + Math.round(a * 30) + '|' + blink + '|' + look : 'idle';
+  if (key === peekKey) return;     // nothing moved: leave the canvas alone
+  peekKey = key;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, peek.width, peek.height);
+  c.imageSmoothingEnabled = false;
+  for (let s = 0; s < 6; s++) {
+    const x = s * T;
+    if (s === slot && a > 0) {
+      c.fillStyle = '#05020a';
+      c.fillRect(x, top, T, T);
+      if (!blink && a > 0.4) {
+        c.globalAlpha = Math.min(1, (a - 0.4) / 0.4);
+        c.drawImage(mini.eyes, x - mini.pad + look, top - mini.pad + Math.round(T * 0.3));
+        c.globalAlpha = 1;
+      }
+      c.save();
+      c.translate(x, top + T);
+      c.rotate(-0.2 * a);
+      c.drawImage(mini.unrev[s % 3], 0, -T - Math.round(T * 0.4 * a));
+      c.restore();
+    } else c.drawImage(mini.unrev[s % 3], x, top);
+  }
+}
+
+// ======================================================================
+// Background (stars, moon, graves)
+// ======================================================================
+let bgKey = '';
+function drawBg() {
+  const dpr = DPR(), w = window.innerWidth, h = window.innerHeight;
+  const u = Math.max(2, Math.round(3 * dpr)), R = 9;
+  // In play the HUD is a row along the top: hang the moon just below it.
+  const hud = document.getElementById('hud').getBoundingClientRect();
+  const below = mode !== 'title' && hud.width > hud.height ? Math.round((hud.bottom + 10) * dpr) + R * u : 0;
+  const mx = Math.round(w * dpr) - u * 26, my = Math.max(u * 22, below);
+  const key = Math.round(w * dpr) + 'x' + Math.round(h * dpr) + '@' + my;
+  if (key === bgKey) return;
+  bgKey = key;
+  bg.width = Math.round(w * dpr); bg.height = Math.round(h * dpr);
+  const c = bg.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, bg.height);
+  g.addColorStop(0, '#170a29'); g.addColorStop(0.55, '#0d0717'); g.addColorStop(1, '#07040c');
+  c.fillStyle = g; c.fillRect(0, 0, bg.width, bg.height);
+  const p = Math.max(2, Math.round(2 * dpr));
+  let seed = 1234567;
+  const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let k = 0; k < 80; k++) {
+    const x = r() * bg.width, y = r() * bg.height * 0.75;
+    c.globalAlpha = 0.2 + r() * 0.55;
+    c.fillStyle = r() < 0.2 ? '#ffd9a0' : '#bba6e6';
+    c.fillRect(Math.round(x / p) * p, Math.round(y / p) * p, p, p);
+  }
+  c.globalAlpha = 1;
+  // pixel moon
+  for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) {
+    if (x * x + y * y > R * R) continue;
+    const crater = (x + 3) ** 2 + (y + 2) ** 2 < 6 || (x - 4) ** 2 + (y - 3) ** 2 < 4 || (x + 1) ** 2 + (y - 5) ** 2 < 2;
+    c.fillStyle = crater ? '#d9c38f' : (x + y > 6 ? '#e8d6a6' : '#fff0c8');
+    c.fillRect(mx + x * u, my + y * u, u, u);
+  }
+  // graves along the bottom
+  c.fillStyle = '#120a1e';
+  const base = bg.height - u * 4;
+  c.fillRect(0, base, bg.width, u * 4);
+  for (let x = u * 6; x < bg.width; x += u * (18 + Math.floor(r() * 16))) {
+    const gh = u * (5 + Math.floor(r() * 4)), gw = u * 5;
+    c.fillRect(x, base - gh, gw, gh);
+    c.fillRect(x + u, base - gh - u, gw - 2 * u, u);
+    if (r() < 0.4) { c.fillRect(x + 2 * u, base - gh - 4 * u, u, 3 * u); c.fillRect(x + u, base - gh - 3 * u, 3 * u, u); }
+  }
+}
+
+// ======================================================================
+// Main loop, resize, boot
+// ======================================================================
+let lastFrame = performance.now(), lastSec = -1;
+function frame(now) {
+  if (now - lastFrame > 100) dirty = true;
+  const dt = Math.min(250, Math.max(0, now - lastFrame));
+  lastFrame = now;
+  if (mode === 'title') drawPeek(now);
+  else if (G && S) {
+    if (G.running) {
+      G.elapsed += dt;
+      const s = Math.floor(G.elapsed / 1000);
+      if (s !== lastSec) { lastSec = s; timerEl.textContent = pad3(Math.min(999, s)); }
+    }
+    const mound = !G.over && G.mons.some(m => !m.dead && G.revealed[m.i]);
+    if (dirty || isAnimating(now) || ((scratchFading(now) || mound) && now - lastRender > 66)) {
+      render(now);
+      dirty = false;
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+let resizeQueued = false, bgTimer = 0;
+function onResize() {
+  if (resizeQueued) return;
+  resizeQueued = true;
+  requestAnimationFrame(() => {
+    resizeQueued = false;
+    clearTimeout(bgTimer);
+    bgTimer = setTimeout(drawBg, 120);
+    layout(false);
+    layoutTitle();
+    hintEl.textContent = hintText();
+    const now = performance.now();
+    if (mode === 'title') drawPeek(now);
+    else if (G && S) { render(now); dirty = false; }
+    if (mode === 'end' && G && G.over) sizeEndTitle();
+  });
+}
+window.addEventListener('resize', onResize);
+window.addEventListener('pageshow', () => { dirty = true; });
+app.addEventListener('scroll', () => { if (app.scrollLeft || app.scrollTop) app.scrollLeft = app.scrollTop = 0; });
+window.addEventListener('orientationchange', onResize);
+if ('ResizeObserver' in window) new ResizeObserver(onResize).observe(wrap);
+(function watchDpr() {
+  if (!window.matchMedia) return;
+  const mq = matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)');
+  const h = () => { onResize(); watchDpr(); };
+  if (mq.addEventListener) mq.addEventListener('change', h, { once: true });
+  else if (mq.addListener) mq.addListener(h);
+})();
+
+document.querySelectorAll('[data-icon]').forEach(el => setIcon(el, el.dataset.icon));
+syncMute();
+setDiff(diff);
+setFlagMode(false);
+newGame(diff);
+drawBg();
+layout(true);
+layoutTitle();
+updateHUD();
+requestAnimationFrame(frame);
+
+if (TEST) {
+  window.__MSM = {
+    get G() { return G; }, get view() { return view; }, get mode() { return mode; }, get flagMode() { return flagMode; },
+    get tntMode() { return tntMode; },
+    start: d => startGame(d), reveal: actReveal, flag: actFlag, stomp: actStomp, tnt: actTNT, settle: settleMove,
+    verify: verifyNumbers, REC, MOVE_EVERY, LURE_RADIUS, BOLT_STEP_MS, LUNGE_STEP_MS, VEER, DIFFS, KNOCK_CHAIN_MAX,
+    forceVeer: k => { forceVeer = k; }, forceKnock: k => { forceKnock = k; }, aimTile, aimRays, aimMons, launchDirs, monAt, monView, craterAt, busy,
+    // set up a position: monster k moves to tile i (no move logged), and the numbers are recounted
+    place: (k, i) => { const m = G.mons[k]; m.i = i; m.trail = []; m.eyes = -1; recompute(false); dirty = true; },
+  };
+}
+})();
+</script>
+</body>
+</html>
